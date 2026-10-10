@@ -2,7 +2,7 @@
 # Se ejecuta en GitHub después de crear el proyecto Android.
 # Para cambiar al ID real de AdMob, reemplazá el valor de ADMOB_APP_ID (formato ca-app-pub-XXXX~YYYY).
 set -e
-ADMOB_APP_ID="ca-app-pub-3940256099942544~3347511713"   # ID de PRUEBA de Google
+ADMOB_APP_ID="ca-app-pub-7520034420780164~2580808090"   # ID de PRUEBA de Google
 
 MANIFEST=android/app/src/main/AndroidManifest.xml
 # permisos de ubicación
