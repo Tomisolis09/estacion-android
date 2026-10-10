@@ -39,3 +39,12 @@ Si perdés `clave.jks` no podés actualizar la app. Guardala fuera de GitHub (nu
    antes de pasar a producción. Verificá los requisitos actuales en la consola.
 
 Cada vez que subas cambios, el `versionCode` sube solo, así que Play acepta la actualización.
+
+## Anuncios (AdMob)
+Ahora viene con un banner abajo y con los anuncios de PRUEBA de Google. Para cobrar:
+1. Creá tu cuenta en https://admob.google.com y agregá la app (Android). AdMob te da un **ID de la app** (con `~`).
+2. Dentro de la app creá un bloque de anuncios tipo **Banner**. AdMob te da un **ID de bloque** (con `/`).
+3. En `scripts/preparar-android.sh` reemplazá `ADMOB_APP_ID` por tu ID de la app.
+4. En `www/anuncios.js` poné `PRUEBA: false` y pegá el ID del banner en `BANNER_ID_REAL`.
+5. Nunca toques los anuncios reales desde tu propio celular. Podés suspender tu cuenta.
+6. En Play Console, en "Contenido de la app", declará que contiene anuncios y actualizá "Seguridad de los datos".

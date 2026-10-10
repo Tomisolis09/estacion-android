@@ -2,11 +2,12 @@
   "name": "estacion-meteorologica",
   "version": "1.0.0",
   "private": true,
-  "description": "Estación Meteorológica para Android (Capacitor)",
+  "description": "Estaci\u00f3n Meteorol\u00f3gica para Android (Capacitor)",
   "dependencies": {
     "@capacitor/android": "latest",
     "@capacitor/cli": "latest",
-    "@capacitor/core": "latest"
+    "@capacitor/core": "latest",
+    "@capacitor-community/admob": "latest"
   },
   "devDependencies": {
     "@capacitor/assets": "latest"
