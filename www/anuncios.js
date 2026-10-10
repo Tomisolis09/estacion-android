@@ -2,8 +2,8 @@
 // Para publicar con anuncios reales: poné PRUEBA en false y pegá tu ID de bloque de banner.
 (function () {
   var CONFIG = {
-    PRUEBA: true,
-    BANNER_ID_REAL: "",   // ej. "ca-app-pub-1234567890123456/1234567890"
+    PRUEBA: false, 
+    BANNER_ID_REAL: "ca-app-pub-7520034420780164/9952951521",
     BANNER_ID_PRUEBA: "ca-app-pub-3940256099942544/6300978111"
   };
   var cap = window.Capacitor;
