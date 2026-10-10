@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Estación">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Estación Meteorológica</title>
+<style>
+/* Layout: una columna, cabecera con ubicación, contenido con scroll y barra de pestañas fija abajo. */
+:root {
+  --bg: #eef2f7; --card: #ffffff; --line: #e2e8f0; --text: #0f172a; --text2: #64748b;
+  --accent: #2563eb; --sub: #f1f5f9; --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+  --tab: #ffffffee; --shadow: 0 1px 2px rgba(15,23,42,.06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) {
+    --bg: #0b1220; --card: #131c2e; --line: #223049; --text: #e5e9f0; --text2: #8b9bb4;
+    --accent: #5b9bff; --sub: #182339; --tab: #0f1729ee; --shadow: none; color-scheme: dark;
+  }
+}
+:root[data-tema="oscuro"] {
+  --bg: #0b1220; --card: #131c2e; --line: #223049; --text: #e5e9f0; --text2: #8b9bb4;
+  --accent: #5b9bff; --sub: #182339; --tab: #0f1729ee; --shadow: none; color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overscroll-behavior-y: contain;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+#app { display: flex; flex-direction: column; height: 100%; max-width: 560px; margin: 0 auto; }
+header {
+  display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 10px) 16px 8px;
+}
+#btnUbic {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start;
+  background: none; border: 0; padding: 4px 0; text-align: left;
+}
+#btnUbic small { color: var(--text2); font-size: 12px; }
+#btnUbic strong { font-size: 17px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-btn {
+  width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--card); display: grid; place-items: center; box-shadow: var(--shadow);
+}
+.icon-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn.girando svg { animation: gira 0.9s linear infinite; }
+@keyframes gira { to { transform: rotate(360deg); } }
+main { flex: 1; overflow-y: auto; padding: 4px 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+nav {
+  display: grid; grid-template-columns: repeat(5, 1fr); background: var(--tab);
+  backdrop-filter: blur(12px); border-top: 1px solid var(--line);
+  padding: 6px 4px calc(env(safe-area-inset-bottom) + 6px);
+}
+nav button {
+  background: none; border: 0; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 0; font-size: 11px; color: var(--text2); border-radius: 12px; position: relative;
+}
+nav button svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+nav button[aria-selected="true"] { color: var(--accent); font-weight: 600; }
+nav .punto { position: absolute; top: 4px; right: 28%; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.hero { border-radius: 24px; padding: 20px; color: #fff; display: flex; flex-direction: column; gap: 6px; }
+.hero .fila { display: flex; align-items: center; gap: 12px; }
+.hero .ico { font-size: 56px; line-height: 1; }
+.hero .temp { font-size: 68px; font-weight: 700; line-height: 1; letter-spacing: -2px; }
+.hero .desc { font-size: 18px; font-weight: 600; }
+.hero .meta { opacity: .88; font-size: 14px; }
+.rota {
+  margin-top: 8px; background: rgba(255,255,255,.16); border-radius: 12px; padding: 8px 12px;
+  font-size: 13px; min-height: 36px; display: flex; align-items: center; transition: opacity .3s;
+}
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px; box-shadow: var(--shadow); }
+.card h2 { margin: 0 0 10px; font-size: 14px; font-weight: 700; }
+.card h2 span { color: var(--text2); font-weight: 500; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.dato { background: var(--sub); border-radius: 12px; padding: 10px 6px; text-align: center; min-width: 0; }
+.dato small { display: block; color: var(--text2); font-size: 11px; }
+.dato b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.tira { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.tira::-webkit-scrollbar { display: none; }
+.h {
+  flex: 0 0 auto; min-width: 58px; background: var(--sub); border-radius: 14px; padding: 8px 6px;
+  text-align: center; display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums;
+}
+.h small { color: var(--text2); font-size: 11px; }
+.h .e { font-size: 22px; }
+.h b { font-size: 15px; }
+
+.seg { display: flex; background: var(--sub); border-radius: 12px; padding: 3px; gap: 2px; }
+.seg button { flex: 1; border: 0; background: none; padding: 8px 4px; border-radius: 10px; font-size: 13px; color: var(--text2); }
+.seg button[aria-pressed="true"] { background: var(--card); color: var(--text); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.filah { display: grid; grid-template-columns: 48px 28px 1fr 64px; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.filah:last-child { border: 0; }
+.filah .hh { color: var(--text2); font-size: 13px; }
+.filah .e { font-size: 20px; text-align: center; }
+.filah .val { text-align: right; font-weight: 600; font-size: 14px; }
+.barra { height: 8px; background: var(--sub); border-radius: 4px; overflow: hidden; }
+.barra i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.barra.viento i { background: #14b8a6; } .barra.uv i { background: #f59e0b; } .barra.lluvia i { background: #3b82f6; }
+
+.dia { width: 100%; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; box-shadow: var(--shadow); }
+.dia .cab { display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: center; }
+.dia .e { font-size: 30px; }
+.dia .nom { font-weight: 700; } .dia .sub { color: var(--text2); font-size: 12px; }
+.dia .mm { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+.dia .mm small { color: var(--text2); font-weight: 500; }
+.dia .det { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+.mini-bars { display: flex; align-items: flex-end; gap: 6px; height: 90px; }
+.mini-bars div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; height: 100%; }
+.mini-bars i { width: 100%; background: #3b82f6; border-radius: 5px 5px 2px 2px; min-height: 3px; }
+.mini-bars small { color: var(--text2); font-size: 10px; }
+.lineas { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.titulo-g { font-size: 17px; font-weight: 700; margin: 0; }
+.capa { display: grid; grid-template-columns: 56px 1fr 40px; gap: 8px; align-items: center; font-size: 13px; color: var(--text2); }
+.capa span:last-child { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.aviso { display: flex; gap: 10px; padding: 12px; border-radius: 14px; background: var(--sub); border-left: 4px solid var(--text2); }
+.aviso.ok { border-color: var(--ok); } .aviso.info { border-color: var(--accent); }
+.aviso.warn { border-color: var(--warn); } .aviso.bad { border-color: var(--bad); }
+.mov { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.mov:last-child { border: 0; }
+.mov .e { font-size: 26px; } .mov b { display: block; }
+.mov .ok b { color: var(--ok); } .mov .warn b { color: var(--warn); } .mov .bad b { color: var(--bad); }
+.estado { text-align: center; color: var(--text2); padding: 40px 12px; }
+.estado .grande { font-size: 56px; }
+.btn { border: 0; border-radius: 12px; padding: 12px 16px; background: var(--accent); color: #fff; font-weight: 600; }
+.btn.sec { background: var(--sub); color: var(--text); }
+.pie { text-align: center; color: var(--text2); font-size: 12px; }
+
+#hoja { position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end; background: rgba(0,0,0,.45); }
+#hoja[hidden] { display: none; }
+.hoja-in {
+  width: 100%; max-width: 560px; margin: 0 auto; background: var(--bg); border-radius: 24px 24px 0 0;
+  padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px); max-height: 85%; display: flex; flex-direction: column; gap: 10px;
+}
+.hoja-in input {
+  width: 100%; border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 12px; padding: 12px; font: inherit; font-size: 16px;
+}
+#resultados { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; min-height: 40px; }
+#resultados button { text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+#resultados small { color: var(--text2); display: block; }
+@media (prefers-reduced-motion: reduce) { .rota { transition: none; } .icon-btn.girando svg { animation: none; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button id="btnUbic" aria-label="Cambiar ubicación"><small>Ubicación</small><strong id="nomUbic">Elegí una ciudad</strong></button>
+    <button class="icon-btn" id="btnTema" aria-label="Cambiar tema"><svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+    <button class="icon-btn" id="btnRefrescar" aria-label="Actualizar"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg></button>
+  </header>
+  <main id="vista"></main>
+  <nav id="tabs" role="tablist">
+    <button role="tab" data-tab="hoy"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>Hoy</button>
+    <button role="tab" data-tab="horas"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Horas</button>
+    <button role="tab" data-tab="dias"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Días</button>
+    <button role="tab" data-tab="radar"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12l6-6"/></svg>Radar</button>
+    <button role="tab" data-tab="avisos"><svg viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></svg>Avisos<span class="punto" id="puntoAviso" hidden></span></button>
+  </nav>
+</div>
+
+<div id="hoja" hidden>
+  <div class="hoja-in" role="dialog" aria-label="Buscar ubicación">
+    <input id="buscar" type="search" placeholder="Buscar localidad (ej. Rosario)" autocomplete="off">
+    <button class="btn sec" id="btnGPS">Usar mi ubicación</button>
+    <div id="resultados"></div>
+    <button class="btn sec" id="btnCerrarHoja">Cerrar</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ============================================================
+// CONSTANTES (mismas que la versión de escritorio)
+// ============================================================
+const URL_CLIMA = "https://api.open-meteo.com/v1/forecast";
+const URL_GEO = "https://geocoding-api.open-meteo.com/v1/search";
+const DIAS = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+const PARAMS = {
+  current: "temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+  hourly: "temperature_2m,precipitation_probability,precipitation,weather_code,is_day,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,visibility,cape,wind_speed_10m,uv_index",
+  daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,uv_index_max",
+  minutely_15: "precipitation", timezone: "auto", forecast_days: "7",
+};
+const DESCRIPCIONES = {0:"Despejado",1:"Mayormente despejado",2:"Parcialmente nublado",3:"Nublado",45:"Niebla",48:"Niebla con escarcha",51:"Llovizna débil",53:"Llovizna",55:"Llovizna intensa",56:"Llovizna helada",57:"Llovizna helada intensa",61:"Lluvia débil",63:"Lluvia",65:"Lluvia fuerte",66:"Lluvia helada",67:"Lluvia helada fuerte",71:"Nevada débil",73:"Nevada",75:"Nevada fuerte",77:"Granizo fino",80:"Chubascos débiles",81:"Chubascos",82:"Chubascos violentos",85:"Chubascos de nieve",86:"Chubascos de nieve fuertes",95:"Tormenta",96:"Tormenta con granizo",99:"Tormenta con granizo fuerte"};
+const ICONOS = {2:"⛅",3:"☁️",45:"🌫️",48:"🌫️",51:"🌦️",53:"🌦️",55:"🌧️",56:"🌧️",57:"🌧️",61:"🌧️",63:"🌧️",65:"🌧️",66:"🌧️",67:"🌧️",71:"🌨️",73:"🌨️",75:"❄️",77:"❄️",80:"🌦️",81:"🌧️",82:"⛈️",85:"🌨️",86:"❄️",95:"⛈️",96:"⛈️",99:"⛈️"};
+
+// ============================================================
+// UTILIDADES
+// ============================================================
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const leer = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
+const dato = (o, k, i, def = 0) => { const v = (o && o[k]) || []; return i >= 0 && i < v.length && v[i] != null ? v[i] : def; };
+const describir = c => DESCRIPCIONES[c] || "Variable";
+function icono(c, dia = true) {
+  if (c === 0 || c === 1) return dia ? (c === 0 ? "☀️" : "🌤️") : "🌙";
+  if (c === 2) return dia ? "⛅" : "☁️";
+  return ICONOS[c] || "🌤️";
+}
+function gradiente(c, dia) {
+  if ([95, 96, 99].includes(c)) return ["#1e1b4b", "#6d28d9"];
+  if (!dia) return ["#0f172a", "#3730a3"];
+  if ([51,53,55,56,57,61,63,65,66,67,80,81,82].includes(c)) return ["#334155", "#0369a1"];
+  if ([71,73,75,77,85,86,45,48].includes(c)) return ["#64748b", "#94a3b8"];
+  if (c === 3) return ["#475569", "#94a3b8"];
+  if (c === 2) return ["#2563eb", "#64748b"];
+  return ["#1d4ed8", "#38bdf8"];
+}
+const cieloPorNubes = p => p < 10 ? "Despejado" : p < 30 ? "Poco nublado" : p < 60 ? "Parcialmente nublado" : p < 85 ? "Mayormente nublado" : "Nublado";
+const nivelUV = u => u < 3 ? "Bajo" : u < 6 ? "Moderado" : u < 8 ? "Alto" : u < 11 ? "Muy alto" : "Extremo";
+const dirViento = g => g == null ? "" : ["N","NE","E","SE","S","SO","O","NO"][Math.floor(((g % 360) + 360) % 360 / 45 + 0.5) % 8];
+const intensidad = mm => mm < 0.1 ? "nula" : mm < 2.5 ? "débil" : mm < 7.6 ? "moderada" : mm < 50 ? "fuerte" : "muy fuerte";
+const fechaLarga = s => { const [y, m, d] = s.split("-").map(Number); const f = new Date(y, m - 1, d); return `${DIAS[f.getDay()]} ${d} de ${MESES[m - 1]}`; };
+function nombreDia(fecha, i) {
+  if (i === 0) return "Hoy"; if (i === 1) return "Mañana";
+  const [y, m, d] = fecha.split("-").map(Number); return DIAS[new Date(y, m - 1, d).getDay()];
+}
+function indiceHoraActual(horario, actual) {
+  const ref = (actual.time || "").slice(0, 13);
+  const t = horario.time || [];
+  for (let i = 0; i < t.length; i++) if (t[i].slice(0, 13) >= ref) return i;
+  return 0;
+}
+const horaTxt = s => (s || "").slice(11, 16);
+const colorTemp = t => t <= 5 ? "#3b82f6" : t <= 15 ? "#0ea5e9" : t <= 24 ? "#10b981" : t <= 30 ? "#f59e0b" : "#ef4444";
+
+// ============================================================
+// LECTURA DE RADAR Y SATÉLITE (a partir del modelo, no de imágenes)
+// ============================================================
+function analizarRadarSatelite(datos) {
+  const actual = datos.current || {}, horario = datos.hourly || {}, min15 = datos.minutely_15 || {};
+  const i0 = indiceHoraActual(horario, actual);
+  const ref = actual.time || "";
+  let proximos = [];
+  const tiempos = min15.time || [], valores = min15.precipitation || [];
+  if (ref && tiempos.length && valores.length) {
+    const t0 = new Date(ref).getTime();
+    for (let k = 0; k < tiempos.length; k++) {
+      if (tiempos[k] >= ref) {
+        proximos.push([Math.floor((new Date(tiempos[k]).getTime() - t0) / 60000), (valores[k] || 0) * 4]);
+        if (proximos.length >= 8) break;
+      }
+    }
+  }
+  if (!proximos.length) for (let k = 0; k < 3; k++) proximos.push([k * 60, dato(horario, "precipitation", i0 + k)]);
+  const horizonte = proximos.length === 8 ? "2 horas" : "3 horas";
+  const mmActual = Math.max(actual.precipitation || 0, proximos[0] ? proximos[0][1] : 0);
+  const primera = proximos.find(([, mm]) => mm >= 0.1);
+  let acum3 = 0; for (let k = 0; k < 3; k++) acum3 += dato(horario, "precipitation", i0 + k);
+  let prob6 = 0, cape = 0;
+  for (let k = 0; k < 6; k++) {
+    prob6 = Math.max(prob6, dato(horario, "precipitation_probability", i0 + k));
+    cape = Math.max(cape, dato(horario, "cape", i0 + k));
+  }
+  const radarLineas = []; let radarTitulo;
+  if (mmActual >= 0.1) {
+    radarTitulo = `Precipitación ${intensidad(mmActual)} en la zona`;
+    const fin = proximos.find(([mn, mm]) => mn > 0 && mm < 0.1);
+    radarLineas.push(fin ? `🕒 Cesaría en unos ${fin[0]} min.` : `🕒 Continuaría durante las próximas ${horizonte}.`);
+  } else if (primera) {
+    radarTitulo = `Lluvia ${intensidad(Math.max(...proximos.map(p => p[1])))} en camino`;
+    radarLineas.push(`🕒 Comenzaría en unos ${primera[0]} min.`);
+  } else radarTitulo = `Sin precipitación prevista en las próximas ${horizonte}`;
+  radarLineas.push(`💧 Acumulado próximas 3 h: ${acum3.toFixed(1)} mm`);
+  radarLineas.push(`🎯 Probabilidad máxima en 6 h: ${prob6.toFixed(0)}%`);
+  if (cape >= 2000 && prob6 >= 30) radarLineas.push(`⚡ Atmósfera muy inestable (CAPE ${cape.toFixed(0)} J/kg): riesgo de tormentas fuertes.`);
+  else if (cape >= 1000 && prob6 >= 20) radarLineas.push(`⚡ Inestabilidad moderada (CAPE ${cape.toFixed(0)} J/kg): posibles tormentas aisladas.`);
+
+  let nubes = actual.cloud_cover; if (nubes == null) nubes = dato(horario, "cloud_cover", i0);
+  const bajas = dato(horario, "cloud_cover_low", i0), medias = dato(horario, "cloud_cover_mid", i0), altas = dato(horario, "cloud_cover_high", i0);
+  const cielo = cieloPorNubes(nubes);
+  const satTitulo = `${cielo} (${nubes.toFixed(0)}% de cobertura)`;
+  const satLineas = [];
+  const capas = [["bajas", bajas], ["medias", medias], ["altas", altas]];
+  const [dom, val] = capas.reduce((a, b) => b[1] > a[1] ? b : a);
+  if (val < 20) satLineas.push("🌤️ Sin capas de nubes significativas.");
+  else satLineas.push("☁️ " + {
+    bajas: "Predominan nubes bajas (estratos): cielo cubierto, posible llovizna o neblina.",
+    medias: "Predominan nubes medias (altostratos/altocúmulos): sol velado.",
+    altas: "Predominan nubes altas (cirros): cielo velado, sin lluvia asociada.",
+  }[dom]);
+  const futura = dato(horario, "cloud_cover", i0 + 6, nubes), delta = futura - nubes;
+  let tendTxt;
+  if (delta >= 20) { satLineas.push(`📈 La nubosidad aumentaría en 6 h (→ ${futura.toFixed(0)}%).`); tendTxt = "con nubosidad en aumento"; }
+  else if (delta <= -20) { satLineas.push(`📉 La nubosidad disminuiría en 6 h (→ ${futura.toFixed(0)}%).`); tendTxt = "con tendencia a despejar"; }
+  else { satLineas.push("➖ La nubosidad se mantendría similar en las próximas 6 h."); tendTxt = "sin cambios importantes en la nubosidad"; }
+  const vis = dato(horario, "visibility", i0, null);
+  if (vis != null && vis < 5000) satLineas.push(`🌫️ Visibilidad reducida: ${(vis / 1000).toFixed(1)} km.`);
+
+  const partes = [`Cielo ${cielo.toLowerCase()}, ${tendTxt}.`];
+  if (mmActual >= 0.1) partes.push(`Hay precipitación ${intensidad(mmActual)} ahora mismo.`);
+  else if (primera) partes.push(`Se espera lluvia en unos ${primera[0]} minutos.`);
+  else if (prob6 >= 40) partes.push("Por ahora no llueve, pero hay chances de lluvia en las próximas horas.");
+  else partes.push("No se esperan lluvias en el corto plazo.");
+  if (cape >= 1000 && prob6 >= 20) partes.push("Ojo con la inestabilidad: pueden desarrollarse tormentas.");
+  return { radarTitulo, radarLineas, satTitulo, satLineas, resumen: partes.join(" "), proximos, capas: { bajas, medias, altas } };
+}
+
+// ============================================================
+// MOVILIDAD Y ALERTAS
+// ============================================================
+function condicionMoto(d) {
+  const ll = dato(d, "precipitation_probability_max", 0), v = dato(d, "wind_speed_10m_max", 0), c = dato(d, "weather_code", 0);
+  if (c >= 95) return ["bad", "Tormentas previstas. Mejor no circular."];
+  if (ll >= 70) return ["bad", `Alta probabilidad de lluvia (${ll.toFixed(0)}%). Pista resbalosa.`];
+  if (v >= 50) return ["bad", `Viento fuerte (${v.toFixed(0)} km/h). Precaución.`];
+  if (ll >= 40 || v >= 35) return ["warn", "Condiciones regulares. Posible lluvia o viento."];
+  return ["ok", "Buenas condiciones para circular."];
+}
+function condicionAuto(d) {
+  const ll = dato(d, "precipitation_probability_max", 0), v = dato(d, "wind_speed_10m_max", 0), c = dato(d, "weather_code", 0);
+  if (c >= 95) return ["bad", "Tormentas previstas. Conducí con mucha precaución."];
+  if (c === 45 || c === 48) return ["warn", "Niebla: reducí la velocidad y usá luces bajas."];
+  if (ll >= 70 || v >= 60) return ["warn", "Conducí con precaución por lluvia o viento."];
+  return ["ok", "Buenas condiciones para conducir."];
+}
+function condicionCaminando(d) {
+  const ll = dato(d, "precipitation_probability_max", 0), uv = dato(d, "uv_index_max", 0), tmax = dato(d, "temperature_2m_max", 0);
+  if (ll >= 70) return ["bad", "Lluvia probable. Llevá paraguas o impermeable."];
+  if (tmax >= 35) return ["warn", "Calor intenso. Hidratate y evitá el mediodía."];
+  if (uv >= 8) return ["warn", "UV muy alto. Usá protector solar."];
+  return ["ok", "Buenas condiciones para caminar."];
+}
+function generarAlertas(d) {
+  const a = [];
+  const c = dato(d, "weather_code", 0), ll = dato(d, "precipitation_probability_max", 0), v = dato(d, "wind_speed_10m_max", 0),
+    r = dato(d, "wind_gusts_10m_max", 0), uv = dato(d, "uv_index_max", 0), tmax = dato(d, "temperature_2m_max", 0), tmin = dato(d, "temperature_2m_min", 0);
+  if (c >= 95) a.push(["bad", "⛈️ Se esperan tormentas hoy. Evitá zonas abiertas y resguardate."]);
+  if (ll >= 70) a.push(["warn", `🌧️ Alta probabilidad de lluvia hoy (${ll.toFixed(0)}%).`]);
+  if (v >= 50 || r >= 70) a.push(["warn", `💨 Vientos fuertes (hasta ${Math.max(v, r).toFixed(0)} km/h).`]);
+  if (uv >= 8) a.push(["warn", `☀️ Índice UV ${nivelUV(uv).toLowerCase()} (${uv.toFixed(1)}). Usá protección solar.`]);
+  if (tmax >= 35) a.push(["warn", `🥵 Calor intenso: máxima de ${tmax.toFixed(0)} °C.`]);
+  if (tmin <= 3) a.push(["warn", `🥶 Frío intenso: mínima de ${tmin.toFixed(0)} °C. Posibles heladas.`]);
+  if (dato(d, "precipitation_probability_max", 1) >= 70 && ll < 70) a.push(["info", "🌧️ Mañana hay alta probabilidad de lluvia."]);
+  if (!a.length) a.push(["ok", "✅ No se detectan condiciones meteorológicas destacables."]);
+  return a;
+}
+
+// ============================================================
+// ESTADO
+// ============================================================
+const estado = {
+  ubic: leer("ubicacion"), datos: leer("ultimoClima"), tab: leer("tab") || "hoy",
+  metrica: "temp", diaAbierto: 0, cargando: false, error: "", rot: 0, lineas: [], ultima: 0,
+};
+
+async function pedirClima() {
+  if (!estado.ubic) return;
+  estado.cargando = true; estado.error = ""; pintarCarga();
+  const p = new URLSearchParams({ ...PARAMS, latitude: estado.ubic.lat, longitude: estado.ubic.lon });
+  try {
+    let r = await fetch(`${URL_CLIMA}?${p}`);
+    if (!r.ok) { p.delete("minutely_15"); r = await fetch(`${URL_CLIMA}?${p}`); }
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    estado.datos = await r.json(); estado.ultima = Date.now();
+    guardar("ultimoClima", estado.datos);
+  } catch (e) {
+    estado.error = estado.datos ? "Sin conexión. Mostrando el último pronóstico guardado." : "No se pudo obtener el clima. Revisá tu conexión.";
+  }
+  estado.cargando = false; pintarCarga(); armarLineas(); render();
+}
+function pintarCarga() { $("#btnRefrescar").classList.toggle("girando", estado.cargando); }
+
+function armarLineas() {
+  const d = estado.datos; if (!d) { estado.lineas = []; return; }
+  const a = d.current || {}, di = d.daily || {};
+  const ra = analizarRadarSatelite(d);
+  estado.lineas = [
+    `🌡️ Ahora ${Math.round(a.temperature_2m)}° · sensación ${Math.round(a.apparent_temperature)}°`,
+    `🔺 Máxima de hoy ${Math.round(dato(di, "temperature_2m_max", 0))}°`,
+    `🔻 Mínima de hoy ${Math.round(dato(di, "temperature_2m_min", 0))}°`,
+    `🌧️ Lluvia: ${dato(di, "precipitation_probability_max", 0).toFixed(0)}% de probabilidad`,
+    ra.resumen,
+  ];
+}
+
+// ============================================================
+// VISTAS
+// ============================================================
+function vistaHoy(d) {
+  const a = d.current, h = d.hourly, di = d.daily, i0 = indiceHoraActual(h, a);
+  const [c1, c2] = gradiente(a.weather_code, a.is_day === 1);
+  let horas = "";
+  for (let k = 0; k < 12; k++) {
+    const i = i0 + k; if (i >= (h.time || []).length) break;
+    horas += `<div class="h"><small>${k === 0 ? "Ahora" : horaTxt(h.time[i])}</small><span class="e">${icono(dato(h, "weather_code", i), dato(h, "is_day", i, 1) === 1)}</span><b>${Math.round(dato(h, "temperature_2m", i))}°</b><small>🌧 ${dato(h, "precipitation_probability", i).toFixed(0)}%</small></div>`;
+  }
+  const uvAhora = dato(h, "uv_index", i0);
+  return `
+  <section class="hero" style="background:linear-gradient(145deg,${c1},${c2})">
+    <div class="fila"><span class="ico">${icono(a.weather_code, a.is_day === 1)}</span><span class="temp">${Math.round(a.temperature_2m)}°</span></div>
+    <div class="desc">${esc(describir(a.weather_code))}</div>
+    <div class="meta">Sensación ${Math.round(a.apparent_temperature)}° · Máx ${Math.round(dato(di, "temperature_2m_max", 0))}° · Mín ${Math.round(dato(di, "temperature_2m_min", 0))}°</div>
+    <div class="rota" id="rota" aria-live="polite">${esc(estado.lineas[estado.rot % estado.lineas.length] || "")}</div>
+  </section>
+  <section class="card"><h2>Próximas horas</h2><div class="tira">${horas}</div></section>
+  <section class="card"><h2>Ahora mismo</h2><div class="grid">
+    <div class="dato"><small>💧 Humedad</small><b>${Math.round(a.relative_humidity_2m)}%</b></div>
+    <div class="dato"><small>💨 Viento</small><b>${Math.round(a.wind_speed_10m)} km/h</b></div>
+    <div class="dato"><small>🧭 Dirección</small><b>${dirViento(a.wind_direction_10m)}</b></div>
+    <div class="dato"><small>🌬️ Ráfagas</small><b>${Math.round(a.wind_gusts_10m)} km/h</b></div>
+    <div class="dato"><small>🎚️ Presión</small><b>${Math.round(a.pressure_msl)} hPa</b></div>
+    <div class="dato"><small>☁️ Nubes</small><b>${Math.round(a.cloud_cover)}%</b></div>
+    <div class="dato"><small>☀️ UV ahora</small><b>${uvAhora.toFixed(1)}</b></div>
+    <div class="dato"><small>☀️ UV máx.</small><b>${dato(di, "uv_index_max", 0).toFixed(1)}</b></div>
+    <div class="dato"><small>💧 Lluvia</small><b>${(a.precipitation || 0).toFixed(1)} mm</b></div>
+  </div></section>`;
+}
+
+const METRICAS = {
+  temp: { nombre: "Temp.", clave: "temperature_2m", fmt: v => Math.round(v) + "°", max: 45, clase: "" },
+  lluvia: { nombre: "Lluvia", clave: "precipitation_probability", fmt: v => Math.round(v) + "%", max: 100, clase: "lluvia" },
+  viento: { nombre: "Viento", clave: "wind_speed_10m", fmt: v => Math.round(v) + " km/h", max: 80, clase: "viento" },
+  uv: { nombre: "UV", clave: "uv_index", fmt: v => v.toFixed(1), max: 12, clase: "uv" },
+};
+function vistaHoras(d) {
+  const h = d.hourly, i0 = indiceHoraActual(h, d.current), m = METRICAS[estado.metrica];
+  let filas = "";
+  for (let k = 0; k < 24; k++) {
+    const i = i0 + k; if (i >= (h.time || []).length) break;
+    const v = dato(h, m.clave, i), pct = Math.max(2, Math.min(100, (v / m.max) * 100));
+    filas += `<div class="filah"><span class="hh">${horaTxt(h.time[i])}</span><span class="e">${icono(dato(h, "weather_code", i), dato(h, "is_day", i, 1) === 1)}</span>
+      <div class="barra ${m.clase}"><i style="width:${pct}%${estado.metrica === "temp" ? `;background:${colorTemp(v)}` : ""}"></i></div><span class="val">${m.fmt(v)}</span></div>`;
+  }
+  const seg = Object.entries(METRICAS).map(([k, x]) => `<button data-metrica="${k}" aria-pressed="${k === estado.metrica}">${x.nombre}</button>`).join("");
+  return `<div class="seg" role="group" aria-label="Dato a mostrar">${seg}</div><section class="card">${filas}</section>`;
+}
+
+function vistaDias(d) {
+  const di = d.daily, h = d.hourly;
+  return (di.time || []).map((f, i) => {
+    const abierto = estado.diaAbierto === i;
+    const c = dato(di, "weather_code", i);
+    let det = "";
+    if (abierto) {
+      const idx = (h.time || []).map((t, k) => t.startsWith(f) ? k : -1).filter(k => k >= 0);
+      det = `<div class="det"><div style="color:var(--text2)">${esc(fechaLarga(f))} · ${esc(describir(c))}</div>
+        <div class="grid">
+          <div class="dato"><small>🌧 Prob.</small><b>${dato(di, "precipitation_probability_max", i).toFixed(0)}%</b></div>
+          <div class="dato"><small>💧 Lluvia</small><b>${dato(di, "precipitation_sum", i).toFixed(1)} mm</b></div>
+          <div class="dato"><small>💨 Viento</small><b>${dato(di, "wind_speed_10m_max", i).toFixed(0)} km/h</b></div>
+          <div class="dato"><small>🌬️ Ráfagas</small><b>${dato(di, "wind_gusts_10m_max", i).toFixed(0)} km/h</b></div>
+          <div class="dato"><small>☀️ UV</small><b>${dato(di, "uv_index_max", i).toFixed(1)}</b></div>
+          <div class="dato"><small>Nivel UV</small><b>${nivelUV(dato(di, "uv_index_max", i))}</b></div>
+        </div>
+        <div class="tira">${idx.filter((_, n) => n % 2 === 0).map(k => `<div class="h"><small>${horaTxt(h.time[k])}</small><span class="e">${icono(dato(h, "weather_code", k), dato(h, "is_day", k, 1) === 1)}</span><b>${Math.round(dato(h, "temperature_2m", k))}°</b></div>`).join("")}</div></div>`;
+    }
+    return `<button class="dia" data-dia="${i}" aria-expanded="${abierto}"><div class="cab"><span class="e">${icono(c)}</span>
+      <div><div class="nom">${nombreDia(f, i)}</div><div class="sub">${esc(describir(c))} · 🌧 ${dato(di, "precipitation_probability_max", i).toFixed(0)}%</div></div>
+      <div class="mm">${Math.round(dato(di, "temperature_2m_max", i))}° <small>${Math.round(dato(di, "temperature_2m_min", i))}°</small></div></div>${det}</button>`;
+  }).join("");
+}
+
+function vistaRadar(d) {
+  const r = analizarRadarSatelite(d);
+  const maxmm = Math.max(1, ...r.proximos.map(p => p[1]));
+  const barras = r.proximos.map(([mn, mm]) => `<div><i style="height:${Math.max(3, mm / maxmm * 100)}%"></i><small>${mn === 0 ? "ya" : "+" + mn + "′"}</small></div>`).join("");
+  const capa = (n, v) => `<div class="capa"><span>${n}</span><div class="barra"><i style="width:${Math.min(100, v)}%"></i></div><span>${v.toFixed(0)}%</span></div>`;
+  return `
+  <section class="card"><h2>📡 Radar <span>· precipitación estimada</span></h2>
+    <p class="titulo-g">${esc(r.radarTitulo)}</p>
+    <div class="mini-bars" role="img" aria-label="Precipitación en los próximos minutos">${barras}</div>
+    <ul class="lineas">${r.radarLineas.map(l => `<li>${esc(l)}</li>`).join("")}</ul></section>
+  <section class="card"><h2>🛰️ Satélite <span>· nubosidad</span></h2>
+    <p class="titulo-g">${esc(r.satTitulo)}</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${capa("Bajas", r.capas.bajas)}${capa("Medias", r.capas.medias)}${capa("Altas", r.capas.altas)}</div>
+    <ul class="lineas">${r.satLineas.map(l => `<li>${esc(l)}</li>`).join("")}</ul></section>
+  <section class="card"><h2>Resumen</h2><div>${esc(r.resumen)}</div></section>
+  <p class="pie">Lectura calculada con datos del modelo Open-Meteo, no son imágenes del SMN.</p>`;
+}
+
+function vistaAvisos(d) {
+  const di = d.daily;
+  const al = generarAlertas(di).map(([n, t]) => `<div class="aviso ${n}">${esc(t)}</div>`).join("");
+  const mov = [["🏍️", "Moto", condicionMoto(di)], ["🚗", "Auto", condicionAuto(di)], ["🚶", "Caminando", condicionCaminando(di)]]
+    .map(([e, n, [nivel, t]]) => `<div class="mov"><span class="e">${e}</span><div class="${nivel}"><b>${n}</b><span style="color:var(--text)">${esc(t)}</span></div></div>`).join("");
+  return `<section class="card"><h2>Alertas de hoy</h2><div style="display:flex;flex-direction:column;gap:8px">${al}</div></section>
+          <section class="card"><h2>Movilidad</h2>${mov}</section>`;
+}
+
+function render() {
+  const nom = estado.ubic ? estado.ubic.nombre : "Elegí una ciudad";
+  $("#nomUbic").textContent = nom;
+  document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === estado.tab)));
+  const v = $("#vista");
+  if (!estado.ubic) {
+    v.innerHTML = `<div class="estado"><div class="grande">🌤️</div><p><b>Estación Meteorológica</b><br>Elegí una localidad para ver el pronóstico.</p><button class="btn" id="btnElegir">Buscar ubicación</button></div>`;
+    $("#btnElegir").onclick = abrirHoja; return;
+  }
+  if (!estado.datos) {
+    v.innerHTML = estado.error ? `<div class="estado"><div class="grande">📡</div><p>${esc(estado.error)}</p><button class="btn" id="btnReint">Reintentar</button></div>` : `<div class="estado">Cargando clima…</div>`;
+    const b = $("#btnReint"); if (b) b.onclick = pedirClima; return;
+  }
+  const f = { hoy: vistaHoy, horas: vistaHoras, dias: vistaDias, radar: vistaRadar, avisos: vistaAvisos }[estado.tab];
+  const aviso = estado.error ? `<div class="aviso warn">${esc(estado.error)}</div>` : "";
+  const scroll = v.scrollTop;
+  v.innerHTML = aviso + f(estado.datos) + `<p class="pie">Actualizado ${estado.ultima ? new Date(estado.ultima).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "(datos guardados)"} · v1.0</p>`;
+  v.scrollTop = scroll;
+  const hayAlerta = generarAlertas(estado.datos.daily).some(([n]) => n === "bad" || n === "warn");
+  $("#puntoAviso").hidden = !hayAlerta;
+  document.title = estado.datos.current ? `${Math.round(estado.datos.current.temperature_2m)}° ${nom}` : "Estación Meteorológica";
+}
+
+// ============================================================
+// INTERACCIÓN
+// ============================================================
+$("#tabs").addEventListener("click", e => {
+  const b = e.target.closest("button[data-tab]"); if (!b) return;
+  estado.tab = b.dataset.tab; guardar("tab", estado.tab); render(); $("#vista").scrollTop = 0;
+});
+$("#vista").addEventListener("click", e => {
+  const m = e.target.closest("[data-metrica]"); if (m) { estado.metrica = m.dataset.metrica; render(); return; }
+  const d = e.target.closest("[data-dia]"); if (d) { const i = +d.dataset.dia; estado.diaAbierto = estado.diaAbierto === i ? -1 : i; render(); }
+});
+$("#btnRefrescar").onclick = pedirClima;
+
+function aplicarTema(t) {
+  if (t === "claro" || t === "oscuro") document.documentElement.dataset.tema = t; else delete document.documentElement.dataset.tema;
+  const oscuro = t ? t === "oscuro" : matchMedia("(prefers-color-scheme: dark)").matches;
+  $('meta[name="theme-color"]').content = oscuro ? "#0b1220" : "#eef2f7";
+}
+$("#btnTema").onclick = () => {
+  const oscuroAhora = document.documentElement.dataset.tema ? document.documentElement.dataset.tema === "oscuro" : matchMedia("(prefers-color-scheme: dark)").matches;
+  const nuevo = oscuroAhora ? "claro" : "oscuro"; guardar("tema", nuevo); aplicarTema(nuevo);
+};
+
+// --- búsqueda de ubicación ---
+let tBusca = 0, seqBusca = 0;
+function abrirHoja() { $("#hoja").hidden = false; $("#buscar").value = ""; $("#resultados").innerHTML = ""; setTimeout(() => $("#buscar").focus(), 50); }
+function cerrarHoja() { $("#hoja").hidden = true; }
+$("#btnUbic").onclick = abrirHoja;
+$("#btnCerrarHoja").onclick = cerrarHoja;
+$("#hoja").addEventListener("click", e => { if (e.target.id === "hoja") cerrarHoja(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") cerrarHoja(); });
+
+function elegir(ubic) {
+  estado.ubic = ubic; estado.datos = null; guardar("ubicacion", ubic); guardar("ultimoClima", null);
+  cerrarHoja(); render(); pedirClima();
+}
+$("#buscar").addEventListener("input", e => {
+  clearTimeout(tBusca); const q = e.target.value.trim();
+  if (q.length < 2) { $("#resultados").innerHTML = ""; return; }
+  tBusca = setTimeout(async () => {
+    const mi = ++seqBusca;
+    try {
+      const p = new URLSearchParams({ name: q, count: "10", language: "es", countryCode: "AR" });
+      const r = await (await fetch(`${URL_GEO}?${p}`)).json();
+      if (mi !== seqBusca) return;
+      const res = r.results || [];
+      $("#resultados").innerHTML = res.length ? res.map((x, i) => `<button data-i="${i}">${esc(x.name)}<small>${esc([x.admin2, x.admin1].filter(Boolean).join(", "))}</small></button>`).join("") : `<div class="estado" style="padding:16px">Sin resultados</div>`;
+      $("#resultados").onclick = ev => {
+        const b = ev.target.closest("button[data-i]"); if (!b) return;
+        const x = res[+b.dataset.i];
+        elegir({ nombre: [x.name, x.admin1].filter((v, k, a) => v && a.indexOf(v) === k).join(", "), lat: x.latitude, lon: x.longitude });
+      };
+    } catch (err) { $("#resultados").innerHTML = `<div class="estado" style="padding:16px">No se pudo buscar. Revisá tu conexión.</div>`; }
+  }, 350);
+});
+$("#btnGPS").onclick = () => {
+  if (!navigator.geolocation) { $("#resultados").innerHTML = `<div class="estado" style="padding:16px">Este dispositivo no permite ubicación.</div>`; return; }
+  $("#resultados").innerHTML = `<div class="estado" style="padding:16px">Buscando tu ubicación…</div>`;
+  navigator.geolocation.getCurrentPosition(
+    p => elegir({ nombre: "Mi ubicación", lat: +p.coords.latitude.toFixed(4), lon: +p.coords.longitude.toFixed(4) }),
+    () => { $("#resultados").innerHTML = `<div class="estado" style="padding:16px">No se pudo obtener la ubicación. Revisá el permiso del navegador.</div>`; },
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+};
+
+// --- línea rotativa (cada 6 s, igual que el escritorio) ---
+setInterval(() => {
+  if (!estado.lineas.length || estado.tab !== "hoy") return;
+  estado.rot = (estado.rot + 1) % estado.lineas.length;
+  const el = $("#rota"); if (!el) return;
+  el.style.opacity = 0;
+  setTimeout(() => { el.textContent = estado.lineas[estado.rot]; el.style.opacity = 1; }, 250);
+}, 6000);
+// refrescar al volver a la app si pasaron más de 10 minutos
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && estado.ubic && Date.now() - estado.ultima > 600000) pedirClima();
+});
+
+// ============================================================
+// ARRANQUE
+// ============================================================
+aplicarTema(leer("tema"));
+if (estado.datos) { estado.ultima = 0; armarLineas(); }
+render();
+if (estado.ubic) pedirClima();
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>

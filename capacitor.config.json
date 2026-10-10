@@ -1,0 +1,7 @@
+{
+  "appId": "com.tomisolis.estacionmeteorologica",
+  "appName": "Estación Meteorológica",
+  "webDir": "www",
+  "backgroundColor": "#0b1220",
+  "android": { "allowMixedContent": false }
+}
