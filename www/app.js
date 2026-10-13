@@ -33,9 +33,13 @@ const estado = {
 async function sincronizar() {
   if (!NATIVO) return;
   try {
+    // El pronóstico que ya bajó la app (solo lo necesario) se comparte con el widget y los avisos
+    const d = estado.datos;
+    const clima = estado.ubic && d && d.current && d.daily ? { current: d.current, daily: d.daily } : undefined;
     const r = await NATIVO.sincronizar({
       ajustes: { notif: estado.ajustes.notif, alertas: estado.ajustes.alertas },
       ubicacion: estado.ubic ? { lat: estado.ubic.lat, lon: estado.ubic.lon, nombre: estado.ubic.nombre } : undefined,
+      clima,
     });
     estado.notifOk = !!(r && r.notificaciones);
   } catch (e) { /* sin nativo: no pasa nada */ }
@@ -53,6 +57,7 @@ async function pedirClima() {
     if (!r.ok) throw new Error("HTTP " + r.status);
     estado.datos = await r.json(); estado.ultima = Date.now();
     guardar("ultimoClima", estado.datos);
+    sincronizar();
   } catch (e) {
     estado.error = estado.datos ? "Sin conexión. Mostrando el último pronóstico guardado." : "No se pudo obtener el clima. Revisá tu conexión.";
   }
@@ -187,6 +192,10 @@ function abrirAjustes() {
     <div class="bloque" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px">
       <button class="btn sec chico" data-prueba="diario">Resumen diario</button><button class="btn sec chico" data-prueba="semanal">Resumen semanal</button>
       <button class="btn sec chico" data-prueba="alerta">Alerta del SMN</button><button class="btn sec chico" data-prueba="sismo">Aviso de sismo</button></div>
+    <div class="nota" id="pruebaNota">Si la prueba no llega, tocá “Diagnóstico” para ver el motivo.</div>
+    <button class="btn sec" id="btnDiag">🔍 Diagnóstico de avisos y widget</button>
+    <div class="nota" id="diagNota" style="white-space:pre-line"></div>
+    <div id="bloqueVideo"></div>
     <div class="sec-tit">Apariencia</div>
     <div class="seg" id="segTema"><button data-tema="auto" aria-pressed="${tema === "auto"}">Automático</button><button data-tema="claro" aria-pressed="${tema === "claro"}">Claro</button><button data-tema="oscuro" aria-pressed="${tema === "oscuro"}">Oscuro</button></div>
     <p class="nota">Datos: Open-Meteo (pronóstico), Servicio Meteorológico Nacional (alertas oficiales, CC BY 4.0), USGS (sismos) y BigDataCloud (nombre del lugar). Esta app no es un servicio oficial ni del gobierno; la información es orientativa. En una emergencia llamá al 911.
@@ -209,9 +218,52 @@ function abrirAjustes() {
   };
   h.querySelectorAll("[data-prueba]").forEach(b => b.onclick = async () => {
     if (!NATIVO) { b.textContent = "Solo en la app"; return; }
+    const nota = h.querySelector("#pruebaNota");
     await sincronizar(); await pedirPermisoNotif(h);
-    NATIVO.probar({ tipo: b.dataset.prueba }).catch(() => {});
+    try {
+      await NATIVO.probar({ tipo: b.dataset.prueba });
+      nota.textContent = "Notificación enviada. Si no la ves, tocá “Diagnóstico”.";
+    } catch (e) { nota.textContent = "No se pudo enviar: " + ((e && e.message) || e); }
   });
+  h.querySelector("#btnDiag").onclick = async () => {
+    const nota = h.querySelector("#diagNota");
+    if (!NATIVO) { nota.textContent = "El diagnóstico solo está en la app instalada."; return; }
+    nota.textContent = "Revisando…";
+    try {
+      await sincronizar();
+      const r = await NATIVO.diagnostico();
+      const ok = v => v ? "✅" : "❌";
+      const cuando = ms => ms ? new Date(ms).toLocaleString("es-AR", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }) : "nunca";
+      nota.innerHTML = "";
+      nota.textContent = [
+        `${ok(r.notificaciones)} Notificaciones permitidas${r.canalesBloqueados ? " · canales silenciados: " + r.canalesBloqueados : ""}`,
+        `${ok(!!r.ubicacion)} Ubicación guardada: ${r.ubicacion || "ninguna (abrí la app y elegí una)"}`,
+        `${ok(r.climaMs)} Último pronóstico guardado: ${cuando(r.climaMs)}`,
+        `${r.widgets > 0 ? "✅" : "ℹ️"} Widgets en la pantalla de inicio: ${r.widgets}`,
+        `Widget: ${r.widgetEstado}`,
+        `${ok(r.sinAhorroBateria)} Sin ahorro de batería${r.sinAhorroBateria ? "" : " (puede demorar los avisos)"}`,
+        `Último resumen diario enviado: ${r.ultimoDiario || "ninguno"} · semanal: ${r.ultimoSemanal || "ninguno"}`,
+        `Android ${r.android}`,
+      ].join("\n");
+      if (!r.sinAhorroBateria) {
+        const b2 = document.createElement("span");
+        b2.className = "enlace"; b2.setAttribute("role", "link"); b2.tabIndex = 0;
+        b2.textContent = "\nAbrir ajustes de batería de Android";
+        b2.onclick = () => NATIVO.abrirAjustesBateria().catch(() => {});
+        nota.appendChild(b2);
+      }
+    } catch (e) { nota.textContent = "No se pudo hacer el diagnóstico: " + ((e && e.message) || e); }
+  };
+  // Video opcional (el usuario elige verlo a cambio de una pausa en los anuncios)
+  if (window.ANUNCIOS && window.ANUNCIOS.videoDisponible()) {
+    const bv = h.querySelector("#bloqueVideo");
+    bv.innerHTML = `<div class="sec-tit">Anuncios</div><button class="btn sec" id="btnVideo">🎬 Ver un video y pausar los anuncios 30 min</button><div class="nota" id="videoNota"></div>`;
+    bv.querySelector("#btnVideo").onclick = async () => {
+      const n = bv.querySelector("#videoNota"); n.textContent = "Cargando video…";
+      const r = await window.ANUNCIOS.videoPremio();
+      n.textContent = r.ok ? "¡Gracias! Anuncios pausados por 30 minutos." : "No hay un video disponible ahora. Probá más tarde.";
+    };
+  }
   h.querySelector("#segTema").onclick = e => {
     const b = e.target.closest("[data-tema]"); if (!b) return;
     const t = b.dataset.tema; guardar("tema", t === "auto" ? null : t); aplicarTema(t === "auto" ? null : t);
@@ -517,6 +569,7 @@ $("#tabs").addEventListener("click", e => {
   const b = e.target.closest("button[data-tab]"); if (!b) return;
   estado.tab = b.dataset.tab; guardar("tab", estado.tab); render(); $("#vista").scrollTop = 0;
   if (estado.tab === "avisos") cargarAvisos();
+  if (window.ANUNCIOS) window.ANUNCIOS.transicion();
 });
 $("#vista").addEventListener("click", e => {
   const m = e.target.closest("[data-metrica]"); if (m) { estado.metrica = m.dataset.metrica; render(); return; }
@@ -548,7 +601,7 @@ $("#btnUbic").onclick = abrirHoja;
 $("#btnCerrarHoja").onclick = cerrarHoja;
 $("#hoja").addEventListener("click", e => { if (e.target.id === "hoja") cerrarHoja(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") { cerrarHoja(); cerrarHoja2(); } });
-function cerrarHoja2() { $("#hoja2").hidden = true; }
+function cerrarHoja2() { $("#hoja2").hidden = true; if (window.ANUNCIOS) setTimeout(window.ANUNCIOS.transicion, 400); }
 
 function elegir(ubic) {
   estado.ubic = ubic; estado.datos = null; estado.avisos.smn = null; estado.avisos.sismos = null;
@@ -596,6 +649,11 @@ document.addEventListener("visibilitychange", () => {
   if (estado.ajustes.gps) seguirGPS();
   if (Date.now() - estado.ultima > 600000) pedirClima();
 });
+
+// Los anuncios de pantalla completa nunca tapan un aviso importante (alerta naranja/roja, sismo fuerte o tsunami)
+window.ANUNCIOS_PERMITIR_PANTALLA_COMPLETA = () => {
+  try { return avisosActivos().max < 2 && $("#hoja").hidden && $("#hoja2").hidden; } catch (e) { return false; }
+};
 
 // ============================================================
 // ARRANQUE
