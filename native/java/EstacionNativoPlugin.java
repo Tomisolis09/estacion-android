@@ -44,6 +44,13 @@ public class EstacionNativoPlugin extends Plugin {
                 climaNuevo = true;
             }
         }
+        Prefs.guardarClaveOm(c, call.getString("omClave", ""));
+        JSObject crecida = call.getObject("crecida");
+        if (crecida != null && ubic != null && ubic.has("lat") && ubic.has("lon") && crecida.has("q2")
+                && crecida.has("q5") && crecida.has("q20")) {
+            Prefs.guardarCrecida(c, ubic.optDouble("lat"), ubic.optDouble("lon"),
+                    crecida.optDouble("q2"), crecida.optDouble("q5"), crecida.optDouble("q20"));
+        }
         Programador.reprogramar(c);
         WidgetProvider.refrescarTodos(c, !climaNuevo);
         JSObject r = new JSObject();
@@ -77,6 +84,10 @@ public class EstacionNativoPlugin extends Plugin {
             sinAhorro = pm != null && pm.isIgnoringBatteryOptimizations(c.getPackageName());
         }
         r.put("sinAhorroBateria", sinAhorro);
+        Prefs.Ubic ub = Prefs.ubicacion(c);
+        r.put("crecidaGuardada", ub != null && Prefs.crecida(c, ub.lat, ub.lon) != null);
+        r.put("rioMs", Prefs.ultimoRio(c));
+        r.put("rioEstado", Prefs.estadoRio(c));
         r.put("ultimoDiario", Prefs.envio(c, "diario"));
         r.put("ultimoSemanal", Prefs.envio(c, "semanal"));
         call.resolve(r);

@@ -33,8 +33,14 @@ final class Pronostico {
                     + "wind_gusts_10m_max,uv_index_max&timezone=auto";
 
     static String url(double lat, double lon, int dias) {
-        return "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon
-                + "&" + PARAMETROS + "&forecast_days=" + dias;
+        return url(lat, lon, dias, "");
+    }
+
+    /** Con clave comercial de Open-Meteo se usa el servidor de clientes. */
+    static String url(double lat, double lon, int dias, String clave) {
+        boolean pago = clave != null && clave.length() > 0;
+        return "https://" + (pago ? "customer-" : "") + "api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon
+                + "&" + PARAMETROS + "&forecast_days=" + dias + (pago ? "&apikey=" + clave : "");
     }
 
     static Pronostico desdeJson(String texto) {

@@ -16,6 +16,7 @@ final class Ajustes {
     int semanalM = 0;
     boolean alertasClima = true;
     boolean alertasSismos = true;
+    boolean alertasInundaciones = true;
     /** "todos", "moderada" o "fuerte": qué sismos generan aviso (igual que en la app). */
     String sensibilidad = "moderada";
 
@@ -41,6 +42,7 @@ final class Ajustes {
             a.semanalM = s[1];
             a.alertasClima = Json.bool(alertas.get("clima"), a.alertasClima);
             a.alertasSismos = Json.bool(alertas.get("sismos"), a.alertasSismos);
+            a.alertasInundaciones = Json.bool(alertas.get("inundaciones"), a.alertasInundaciones);
             String sens = Json.str(alertas.get("sens"), a.sensibilidad);
             a.sensibilidad = ("todos".equals(sens) || "fuerte".equals(sens)) ? sens : "moderada";
         } catch (RuntimeException e) {

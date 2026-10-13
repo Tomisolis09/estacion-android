@@ -101,6 +101,58 @@ final class Prefs {
         return json;
     }
 
+    /** Crecidas de 2, 5 y 20 años del río cercano (las calcula la app para esa ubicación). */
+    static void guardarCrecida(Context c, double lat, double lon, double q2, double q5, double q20) {
+        sp(c).edit()
+                .putString("crecida", q2 + "|" + q5 + "|" + q20 + "|" + lat + "|" + lon)
+                .apply();
+    }
+
+    static void borrarCrecida(Context c) {
+        sp(c).edit().remove("crecida").apply();
+    }
+
+    /** {q2, q5, q20}, solo si fueron calculados para (casi) la misma ubicación; si no, null. */
+    static double[] crecida(Context c, double lat, double lon) {
+        String t = sp(c).getString("crecida", null);
+        if (t == null) return null;
+        try {
+            String[] p = t.split("\\|");
+            if (p.length < 5) return null;
+            if (Math.abs(Double.parseDouble(p[3]) - lat) > 0.05 || Math.abs(Double.parseDouble(p[4]) - lon) > 0.05) return null;
+            return new double[]{Double.parseDouble(p[0]), Double.parseDouble(p[1]), Double.parseDouble(p[2])};
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** Clave comercial de Open-Meteo (vacía = servicio gratuito). Solo letras, números, guion y guion bajo. */
+    static void guardarClaveOm(Context c, String clave) {
+        String limpia = clave == null ? "" : clave.replaceAll("[^A-Za-z0-9_\\-]", "");
+        sp(c).edit().putString("om_clave", limpia).apply();
+    }
+
+    static String claveOm(Context c) {
+        return sp(c).getString("om_clave", "");
+    }
+
+    static long ultimoRio(Context c) {
+        return sp(c).getLong("rio_ts", 0);
+    }
+
+    /** Resultado de la última revisión de ríos (para el Diagnóstico). */
+    static void guardarEstadoRio(Context c, String texto) {
+        sp(c).edit().putString("rio_estado", texto).apply();
+    }
+
+    static String estadoRio(Context c) {
+        return sp(c).getString("rio_estado", "");
+    }
+
+    static void marcarRio(Context c) {
+        sp(c).edit().putLong("rio_ts", System.currentTimeMillis()).apply();
+    }
+
     static long climaMomento(Context c) {
         return sp(c).getLong("clima_ts", 0);
     }

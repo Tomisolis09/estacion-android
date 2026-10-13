@@ -125,6 +125,13 @@ final class Trabajos {
                 Log.w(ETQ, "Alertas del SMN: " + t);
             }
         }
+        if (a.alertasInundaciones) {
+            try {
+                alertasInundaciones(c, u);
+            } catch (Throwable t) {
+                Log.w(ETQ, "Crecida de ríos: " + t);
+            }
+        }
         if (a.alertasSismos) {
             try {
                 alertasSismos(c, u, a);
@@ -156,6 +163,64 @@ final class Trabajos {
             mostrarAlertaSmn(c, u, al);
             Prefs.marcarAvisado(c, clave);
         }
+    }
+
+    /** El caudal se actualiza una vez por día: se consulta como mucho cada 3 horas y solo si hay un río importante cerca. */
+    private static void alertasInundaciones(Context c, Prefs.Ubic u) throws IOException {
+        revisarRio(c, u, false);
+    }
+
+    /**
+     * Revisa el caudal del río cercano. forzar = true (botón de prueba): ignora el límite de 3 horas y el aviso
+     * ya enviado, y siempre deja un texto con el resultado (también si no hay nada que avisar).
+     */
+    private static String revisarRio(Context c, Prefs.Ubic u, boolean forzar) throws IOException {
+        double[] q = Prefs.crecida(c, u.lat, u.lon);
+        if (q == null) {
+            String m = "Sin umbrales de crecida guardados para esta ubicación (no hay un río importante a ~5 km, o falta abrir la solapa Avisos con internet para calcularlos).";
+            Prefs.guardarEstadoRio(c, m);
+            return m;
+        }
+        long ahora = System.currentTimeMillis();
+        if (!forzar && ahora - Prefs.ultimoRio(c) < 3 * HORA_MS) return "";
+        String json;
+        try {
+            json = Http.get(Inundaciones.url(u.lat, u.lon, Prefs.claveOm(c)), 8000);
+        } catch (IOException e) {
+            Prefs.guardarEstadoRio(c, "No se pudo consultar el servicio de ríos: " + e.getMessage());
+            throw e;
+        }
+        Prefs.marcarRio(c);
+        Inundaciones.Resultado r = Inundaciones.evaluar(json, q[0], q[1], q[2], hora(ahora, "yyyy-MM-dd"));
+        if (!r.hayDatos) {
+            String m = "El servicio de ríos no devolvió datos para esta ubicación.";
+            Prefs.guardarEstadoRio(c, m);
+            return m;
+        }
+        String[] nombres = {"normal", "amarilla", "naranja", "roja"};
+        String m = "Caudal " + nombres[r.nivel] + ": pico previsto " + Math.round(r.pico) + " m³/s (crecida frecuente desde "
+                + Math.round(q[0]) + " m³/s)";
+        Prefs.guardarEstadoRio(c, m + " · revisado " + hora(ahora, "d/M HH:mm"));
+        if (r.nivel < 1) return m + ". Por eso no hay aviso.";
+        // Un aviso por nivel cada 4 días: no se repite aunque el pronóstico mueva el día del pico
+        String clave = "rio|" + r.nivel + "|" + (ahora / (4 * 24 * HORA_MS));
+        if (!forzar && Prefs.yaAvisado(c, clave)) return m;
+        mostrarCrecida(c, u, r.nivel, r.pico, r.diaPico);
+        Prefs.marcarAvisado(c, clave);
+        return m;
+    }
+
+    static void mostrarCrecida(Context c, Prefs.Ubic u, int nivel, double pico, String diaPico) {
+        String nombre = nivel >= 3 ? "roja" : nivel == 2 ? "naranja" : "amarilla";
+        String titulo = emojiNivel(nivel >= 3 ? "rojo" : nivel == 2 ? "naranja" : "amarillo") + " Posible crecida del río cercano (" + nombre + ")";
+        String cuando = diaPico.length() >= 10 ? diaPico.substring(8, 10) + "/" + diaPico.substring(5, 7) : "próximos días";
+        String corto = u.nombre + " · pico previsto el " + cuando;
+        String largo = "El modelo de ríos prevé que el caudal del río más grande cerca de " + u.nombre
+                + " llegue a unos " + Math.round(pico) + " m³/s el " + cuando
+                + ", por encima de lo habitual para ese lugar.\n\nQué hacer:\n" + Inundaciones.precauciones(nivel)
+                + "\n\nEs una estimación del modelo GloFAS (Open-Meteo): no reemplaza a las alertas oficiales del INA"
+                + " (ina.gob.ar) ni de Defensa Civil. Puede no corresponder al río que tenés en mente.";
+        Notificador.mostrar(c, 3000 + nivel, Notificador.CANAL_CLIMA, titulo, corto, largo);
     }
 
     static void mostrarAlertaSmn(Context c, Prefs.Ubic u, Smn.Alerta al) {
@@ -230,6 +295,18 @@ final class Trabajos {
                     "🌎 (Prueba) Sismo M5.2 a 120 km de tu ubicación",
                     Sismos.lugarEs(e.lugar) + " · " + hora(e.tiempo, "d/M HH:mm"),
                     "Esto es una notificación de prueba. Así se verá un aviso de sismo.\n\n" + Precauciones.sismo());
+        } else if ("inundacion".equals(tipo)) {
+            Prefs.Ubic ub = u != null ? u : new Prefs.Ubic();
+            mostrarCrecida(c, ub, 2, 1850, hora(System.currentTimeMillis() + 2 * 24 * HORA_MS, "yyyy-MM-dd"));
+        } else if ("rio".equals(tipo)) {
+            // Revisión real del río con tus datos: dice el resultado aunque no haya nada que avisar
+            if (u == null) { avisoPrueba(c, "Falta la ubicación", "Abrí la app y elegí tu ubicación (GPS o a mano)."); return; }
+            try {
+                String m = revisarRio(c, u, true);
+                avisoPrueba(c, "Revisión del río cercano", m);
+            } catch (IOException e) {
+                avisoPrueba(c, "Revisión del río cercano", "No se pudo consultar el servicio de ríos: " + e.getMessage());
+            }
         } else if ("alerta".equals(tipo)) {
             Smn.Alerta al = new Smn.Alerta();
             al.evento = "Tormentas";

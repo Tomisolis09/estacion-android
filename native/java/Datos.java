@@ -24,7 +24,7 @@ final class Datos {
     static Pronostico pronostico(Context c, Prefs.Ubic u, boolean descargar, int timeoutMs) throws IOException {
         if (descargar) {
             try {
-                String json = Http.get(Pronostico.url(u.lat, u.lon, DIAS), timeoutMs);
+                String json = Http.get(Pronostico.url(u.lat, u.lon, DIAS, Prefs.claveOm(c)), timeoutMs);
                 Pronostico p = Pronostico.desdeJson(json);
                 if (p.dias() > 0) {
                     Prefs.guardarClima(c, json, u.lat, u.lon);
