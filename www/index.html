@@ -156,6 +156,19 @@ main > * { flex-shrink: 0; }
 .hoja-in .btn { width: 100%; }
 @media (prefers-reduced-motion: reduce) { .sw i, .sw i::after { transition: none; } }
 #hoja { z-index: 11; }
+.sel-act { display: flex; flex-wrap: wrap; gap: 8px; }
+.sel-act .chip { padding: 8px 12px; font-size: 14px; }
+.act-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.act-cab .btn { white-space: nowrap; width: auto; }
+.astro-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.astro-grid .ai { background: var(--sub); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 2px; }
+.astro-grid .ai small { color: var(--text2); font-size: 12px; } .astro-grid .ai b { font-size: 20px; }
+.luna-fase { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.luna-fase .e { font-size: 40px; line-height: 1; }
+.fases-prox { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 12px; text-align: center; font-size: 12px; }
+.fases-prox .e { font-size: 24px; display: block; }
+.hoja-in select { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 12px; padding: 12px; font: inherit; font-size: 15px; }
+.hoja-in .fila-aj select { padding: 8px; font-size: 15px; }
 /*__ESTILOS_EXTRA__*/
 </style>
 </head>

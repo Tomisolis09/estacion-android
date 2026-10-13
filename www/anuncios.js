@@ -32,8 +32,13 @@
   var cap = window.Capacitor;
   var API = { transicion: function () {}, videoDisponible: function () { return false; }, videoPremio: function () { return Promise.resolve({ ok: false }); } };
   window.ANUNCIOS = API;
-  if (!cap || !cap.isNativePlatform || !cap.isNativePlatform()) return;
+  var nativo = !!(cap && ((cap.isNativePlatform && cap.isNativePlatform()) ||
+    (cap.getPlatform && cap.getPlatform() === "android") || /; wv\)/.test(navigator.userAgent)));
+  if (!nativo) return;
   var AdMob = (cap.Plugins && cap.Plugins.AdMob) || (cap.registerPlugin && cap.registerPlugin("AdMob"));
+  if (!AdMob && cap.nativePromise) {
+    AdMob = new Proxy({}, { get: function (_, m) { return m === "then" ? undefined : function (o) { return cap.nativePromise("AdMob", m, o || {}); }; } });
+  }
   if (!AdMob) return;
 
   var st = document.createElement("style");

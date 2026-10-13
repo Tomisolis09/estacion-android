@@ -3,15 +3,29 @@
 // APP: estado, ubicación (GPS), pantallas. La lógica pura está en nucleo.js.
 // ============================================================
 const cap = window.Capacitor;
-const esNativa = !!(cap && cap.isNativePlatform && cap.isNativePlatform());
-const NATIVO = esNativa && cap.registerPlugin ? cap.registerPlugin("EstacionNativo") : null;
+// Detección tolerante: según la versión de Capacitor, alguna de estas funciones puede faltar
+const esNativa = !!(cap && ((cap.isNativePlatform && cap.isNativePlatform()) ||
+  (cap.getPlatform && cap.getPlatform() === "android") || /; wv\)/.test(navigator.userAgent)));
+function plugin(nombre) {
+  if (!esNativa) return null;
+  if (cap.registerPlugin) { try { return cap.registerPlugin(nombre); } catch (e) { /* se prueba otra vía */ } }
+  if (cap.Plugins && cap.Plugins[nombre]) return cap.Plugins[nombre];
+  if (cap.nativePromise) return new Proxy({}, { get: (_, m) => (m === "then" ? undefined : o => cap.nativePromise(nombre, m, o || {})) });
+  return null;
+}
+function infoNativo() {
+  const c = window.Capacitor;
+  return `Capacitor: ${c ? "sí" : "no"} · plataforma: ${c && c.getPlatform ? c.getPlatform() : "?"} · isNative: ${c && c.isNativePlatform ? c.isNativePlatform() : "?"} · registerPlugin: ${c && c.registerPlugin ? "sí" : "no"} · nativePromise: ${c && c.nativePromise ? "sí" : "no"}\nNavegador: ${navigator.userAgent.slice(0, 120)}`;
+}
+const NATIVO = plugin("EstacionNativo");
 window.EST_NATIVO = NATIVO;
-const GEO = esNativa && cap.registerPlugin ? cap.registerPlugin("Geolocation") : null;
+const GEO = plugin("Geolocation");
 
 const AJUSTES_BASE = {
   listo: false, gps: true,
   notif: { diario: { on: true, hora: "07:30" }, semanal: { on: true, dia: 0, hora: "20:00" } },
-  alertas: { clima: true, sismos: true, sens: "moderada" },
+  alertas: { clima: true, sismos: true, inundaciones: true, sens: "moderada" },
+  actividades: [], propias: [],
 };
 const clonar = o => JSON.parse(JSON.stringify(o));
 function cargarAjustes() {
@@ -20,6 +34,9 @@ function cargarAjustes() {
     listo: !!g.listo, gps: g.gps !== false,
     notif: { diario: { ...b.notif.diario, ...((g.notif || {}).diario || {}) }, semanal: { ...b.notif.semanal, ...((g.notif || {}).semanal || {}) } },
     alertas: { ...b.alertas, ...(g.alertas || {}) },
+    // Actividades que eligió la persona (vacío = todavía no eligió: se muestran todas) y las que agregó ella misma
+    actividades: (Array.isArray(g.actividades) ? g.actividades : []).filter(id => ACTIVIDADES.some(x => x.id === id)),
+    propias: (Array.isArray(g.propias) ? g.propias : []).filter(p => p && typeof p.id === "string" && typeof p.nombre === "string" && ACTIVIDADES.some(x => x.id === p.base)).slice(0, 8),
   };
 }
 const estado = {
@@ -27,6 +44,7 @@ const estado = {
   metrica: "temp", diaAbierto: 0, cargando: false, error: "", rot: 0, lineas: [], ultima: 0,
   gpsEstado: "", // "", "buscando", "sin-permiso"
   actDia: 1, actAbierta: null, avAbierto: null, avisos: { smn: null, sismos: null, cargando: false, error: "", ultima: 0 },
+  rio: { cargando: false, ts: 0, lat: null, lon: null, eval: null, u: null, error: "" },
 };
 
 // ---------- aviso a la parte nativa (widget, alarmas y notificaciones) ----------
@@ -40,10 +58,18 @@ async function sincronizar() {
       ajustes: { notif: estado.ajustes.notif, alertas: estado.ajustes.alertas },
       ubicacion: estado.ubic ? { lat: estado.ubic.lat, lon: estado.ubic.lon, nombre: estado.ubic.nombre } : undefined,
       clima,
+      crecida: crecidaParaNativo(),
+      omClave: OPEN_METEO_CLAVE || "",
     });
     estado.notifOk = !!(r && r.notificaciones);
   } catch (e) { /* sin nativo: no pasa nada */ }
 }
+// Umbrales de crecida del río cercano (si hay uno), para que los avisos en segundo plano puedan compararlos
+function crecidaParaNativo() {
+  const r = estado.rio, u = ubicOk() && r.u && r.u.ok && r.lat === estado.ubic.lat && r.lon === estado.ubic.lon ? r.u : null;
+  return u ? { q2: u.q2, q5: u.q5, q20: u.q20 } : undefined;
+}
+const ubicOk = () => !!(estado.ubic && estado.ubic.lat != null);
 function guardarAjustes() { guardar("ajustes", estado.ajustes); sincronizar(); }
 
 // ---------- clima ----------
@@ -52,12 +78,14 @@ async function pedirClima() {
   estado.cargando = true; estado.error = ""; pintarCarga();
   const p = new URLSearchParams({ ...PARAMS, latitude: estado.ubic.lat, longitude: estado.ubic.lon });
   try {
-    let r = await fetch(`${URL_CLIMA}?${p}`);
-    if (!r.ok) { p.delete("minutely_15"); r = await fetch(`${URL_CLIMA}?${p}`); }
+    let r = await fetch(`${URL_CLIMA}?${p}${omClave}`);
+    if (!r.ok) { p.delete("minutely_15"); r = await fetch(`${URL_CLIMA}?${p}${omClave}`); }
     if (!r.ok) throw new Error("HTTP " + r.status);
     estado.datos = await r.json(); estado.ultima = Date.now();
     guardar("ultimoClima", estado.datos);
     sincronizar();
+    cargarRio();
+    cargarAvisos();
   } catch (e) {
     estado.error = estado.datos ? "Sin conexión. Mostrando el último pronóstico guardado." : "No se pudo obtener el clima. Revisá tu conexión.";
   }
@@ -151,6 +179,7 @@ function formularioAjustes() {
   <div class="sec-tit">Alertas</div>
   <div class="bloque">
     <div class="fila-aj"><div class="tx"><b>Alertas meteorológicas</b><small>Avisos amarillos, naranjas y rojos del SMN para tu ubicación, con qué hacer</small></div>${interruptor("aj-al-clima", a.alertas.clima)}</div>
+    <div class="fila-aj"><div class="tx"><b>Crecida de ríos e inundaciones</b><small>Si hay un río grande cerca tuyo, te avisamos cuando se espera una crecida (estimación del modelo, no oficial)</small></div>${interruptor("aj-al-rios", a.alertas.inundaciones)}</div>
     <div class="fila-aj"><div class="tx"><b>Sismos y tsunami</b><small>Sismos cerca tuyo y posible tsunami si estás en la costa</small></div>${interruptor("aj-al-sismos", a.alertas.sismos)}</div>
     <div class="fila-aj"><div class="tx">Sismos a avisar<small>Recomendado: moderados, desde M5.0 a 300 km, M5.5 a 700 km y M6.5 a 800 km</small></div><select id="aj-sens">${Object.entries(SENS_TXT).map(([k, t]) => `<option value="${k}" ${k === a.alertas.sens ? "selected" : ""}>${t}</option>`).join("")}</select></div>
   </div>
@@ -162,12 +191,12 @@ function enlazarFormulario(raiz) {
     const a = estado.ajustes;
     a.notif.diario.on = g("aj-diario-on").checked; a.notif.diario.hora = g("aj-diario-hora").value || "07:30";
     a.notif.semanal.on = g("aj-sem-on").checked; a.notif.semanal.dia = +g("aj-sem-dia").value; a.notif.semanal.hora = g("aj-sem-hora").value || "20:00";
-    a.alertas.clima = g("aj-al-clima").checked; a.alertas.sismos = g("aj-al-sismos").checked; a.alertas.sens = g("aj-sens").value;
+    a.alertas.clima = g("aj-al-clima").checked; a.alertas.sismos = g("aj-al-sismos").checked; a.alertas.inundaciones = g("aj-al-rios").checked; a.alertas.sens = g("aj-sens").value;
     guardarAjustes();
-    if (a.notif.diario.on || a.notif.semanal.on || a.alertas.clima || a.alertas.sismos) pedirPermisoNotif(raiz);
+    if (a.notif.diario.on || a.notif.semanal.on || a.alertas.clima || a.alertas.sismos || a.alertas.inundaciones) pedirPermisoNotif(raiz);
     if (estado.avisos.ultima) { estado.avisos.ultima = 0; cargarAvisos(true); }
   };
-  raiz.querySelectorAll("input, select").forEach(el => el.addEventListener("change", cambio));
+  raiz.querySelectorAll('input[id^="aj-"], select[id^="aj-"]').forEach(el => el.addEventListener("change", cambio));
 }
 async function pedirPermisoNotif(raiz) {
   const nota = raiz.querySelector("#aj-permiso"); if (!nota || !NATIVO) return;
@@ -177,6 +206,100 @@ async function pedirPermisoNotif(raiz) {
     const b = nota.querySelector("#abrirNotif"); if (b) b.onclick = () => NATIVO.abrirAjustesNotificaciones().catch(() => {});
   } catch (e) {}
 }
+// ============================================================
+// ACTIVIDADES PERSONALIZADAS
+// ============================================================
+const actPorId = id => ACTIVIDADES.find(a => a.id === id);
+// Las actividades de la persona (las elegidas + las que agregó). Vacío = todavía no eligió.
+function actividadesDelUsuario() {
+  const a = estado.ajustes;
+  const elegidas = ACTIVIDADES.filter(x => a.actividades.includes(x.id));
+  const propias = a.propias.map(p => { const b = actPorId(p.base) || ACTIVIDADES[0]; return { ...b, id: p.id, base: b.id, nombre: p.nombre, emoji: p.emoji || b.emoji }; });
+  return elegidas.concat(propias);
+}
+function selectorActividades(sel) {
+  return `<div class="sel-act">${ACTIVIDADES.map(a => `<button type="button" class="chip" data-sel="${a.id}" aria-pressed="${sel.includes(a.id)}">${a.emoji} ${esc(a.nombre)}</button>`).join("")}</div>`;
+}
+// Devuelve una función que lee cuáles quedaron marcadas
+function enlazarSelector(raiz) {
+  raiz.querySelectorAll("[data-sel]").forEach(b => b.onclick = () => b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")));
+  return () => [...raiz.querySelectorAll("[data-sel]")].filter(b => b.getAttribute("aria-pressed") === "true").map(b => b.dataset.sel);
+}
+function bloqueOtras() {
+  return `<div id="otras-lista"></div>
+    <div class="bloque" style="padding:10px;display:flex;flex-direction:column;gap:8px">
+      <input type="text" id="otra-nombre" maxlength="30" placeholder="Ej.: Natación, Crossfit, Trekking…" aria-label="Nombre de la actividad">
+      <div style="display:flex;gap:8px">
+        <input type="text" id="otra-emoji" maxlength="4" placeholder="🏊" aria-label="Emoji (opcional)" style="width:64px;text-align:center">
+        <select id="otra-base" aria-label="Se parece a" style="flex:1">${ACTIVIDADES.map(a => `<option value="${a.id}">Se parece a: ${esc(a.nombre)}</option>`).join("")}</select>
+      </div>
+      <div class="nota">“Se parece a” define cómo se calcula el mejor horario (temperatura, viento, lluvia y más).</div>
+      <button type="button" class="btn sec chico" id="otra-agregar">➕ Agregar mi actividad</button>
+    </div>`;
+}
+function enlazarOtras(raiz) {
+  const lista = raiz.querySelector("#otras-lista");
+  const pintar = () => {
+    lista.innerHTML = estado.ajustes.propias.map(p => `<div class="fila-aj"><div class="tx">${esc(p.emoji || actPorId(p.base).emoji)} ${esc(p.nombre)}<small>Se parece a ${esc(actPorId(p.base).nombre)}</small></div><button type="button" class="btn sec chico" data-quitar="${esc(p.id)}" style="width:auto">Quitar</button></div>`).join("");
+    lista.querySelectorAll("[data-quitar]").forEach(b => b.onclick = () => {
+      estado.ajustes.propias = estado.ajustes.propias.filter(p => p.id !== b.dataset.quitar);
+      guardar("ajustes", estado.ajustes); pintar();
+    });
+  };
+  raiz.querySelector("#otra-agregar").onclick = () => {
+    const nombre = raiz.querySelector("#otra-nombre").value.trim().slice(0, 30);
+    if (nombre.length < 2 || estado.ajustes.propias.length >= 8) return;
+    const e = [...raiz.querySelector("#otra-emoji").value.trim()][0] || "";
+    estado.ajustes.propias.push({ id: "p" + Date.now().toString(36), nombre, emoji: /\p{Extended_Pictographic}/u.test(e) ? e : "", base: raiz.querySelector("#otra-base").value });
+    guardar("ajustes", estado.ajustes);
+    raiz.querySelector("#otra-nombre").value = ""; raiz.querySelector("#otra-emoji").value = "";
+    pintar();
+  };
+  pintar();
+}
+function abrirActividades(volver) {
+  const a = estado.ajustes;
+  mostrarHoja2(`<h3>Tus deportes y actividades</h3>
+    <p class="sutil" style="margin:0">Tocá las que hacés: la solapa Actividades te va a mostrar solo esas, con el mejor horario y las precauciones. Si no elegís ninguna, se muestran todas.</p>
+    ${selectorActividades(a.actividades)}
+    <div class="sec-tit">¿Hacés otra cosa?</div>
+    ${bloqueOtras()}
+    <button class="btn" id="actGuardar">Guardar</button>`);
+  const h = $("#hoja2in");
+  const leerSel = enlazarSelector(h); enlazarOtras(h);
+  h.querySelector("#actGuardar").onclick = () => {
+    a.actividades = leerSel(); guardar("ajustes", a); estado.actAbierta = null; render();
+    if (volver) volver(); else cerrarHoja2();
+  };
+}
+
+// ============================================================
+// SOL Y LUNA
+// ============================================================
+function tarjetaAstros(d, dia, conFases) {
+  const f = (d.daily.time || [])[dia];
+  if (!f || !estado.ubic) return "";
+  const off = d.utc_offset_seconds != null ? d.utc_offset_seconds : -new Date().getTimezoneOffset() * 60;
+  let a, prox = [];
+  try {
+    a = astrosDelDia(f, estado.ubic.lat, estado.ubic.lon, off);
+    if (conFases) prox = proximasFases(Date.now(), off, estado.ubic.lat, 4);
+  } catch (e) { return ""; }
+  const h = m => m === null ? "—" : m;
+  const luz = a.sol.luzMin === null ? "" : `<p class="sutil" style="margin:10px 0 0">☀️ Luz de día: ${Math.floor(a.sol.luzMin / 60)} h ${String(a.sol.luzMin % 60).padStart(2, "0")} min</p>`;
+  const L = a.luna;
+  const fases = prox.length ? `<div class="fases-prox" role="list" aria-label="Próximas fases de la Luna">${prox.map(p => `<div role="listitem"><span class="e">${p.emoji}</span><b>${esc(p.nombre)}</b><br>${p.fecha}</div>`).join("")}</div><p class="nota" style="margin:6px 0 0">Fechas aproximadas (hora local). La Luna se dibuja como se ve desde tu hemisferio.</p>` : "";
+  return `<section class="card"><h2>☀️🌙 Sol y Luna <span>· ${esc(nombreDia(f, dia))}</span></h2>
+    <div class="astro-grid">
+      <div class="ai"><small>🌅 Sale el sol</small><b>${h(a.sol.sale)}</b></div>
+      <div class="ai"><small>🌇 Se pone el sol</small><b>${h(a.sol.pone)}</b></div>
+      <div class="ai"><small>🌙 Sale la luna</small><b>${h(L.sale)}</b></div>
+      <div class="ai"><small>🌒 Se pone la luna</small><b>${h(L.pone)}</b></div>
+    </div>${luz}
+    <div class="luna-fase"><span class="e" aria-hidden="true">${L.emoji}</span><div><b>${esc(L.nombre)}</b><br><span class="sutil">${Math.round(L.iluminacion * 100)}% iluminada · día ${Math.floor(L.edad) + 1} del ciclo lunar</span></div></div>
+    ${fases}</section>`;
+}
+
 function mostrarHoja2(html) { $("#hoja2in").innerHTML = html; $("#hoja2").hidden = false; $("#hoja2in").scrollTop = 0; }
 
 function abrirAjustes() {
@@ -184,6 +307,8 @@ function abrirAjustes() {
   mostrarHoja2(`<h3>Ajustes</h3>
     <div class="sec-tit">Ubicación</div>
     <div class="bloque"><div class="fila-aj"><div class="tx"><b>Seguir mi ubicación (GPS)</b><small>La ubicación se actualiza sola cuando te movés</small></div>${interruptor("aj-gps", estado.ajustes.gps)}</div></div>
+    <div class="sec-tit">Actividades</div>
+    <button class="btn sec" id="btnMisAct">🏃 Mis deportes y actividades</button>
     ${formularioAjustes()}
     <div class="sec-tit">Widget</div>
     <button class="btn sec" id="btnWidget">➕ Agregar widget a la pantalla de inicio</button>
@@ -191,14 +316,14 @@ function abrirAjustes() {
     <div class="sec-tit">Probar notificaciones</div>
     <div class="bloque" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px">
       <button class="btn sec chico" data-prueba="diario">Resumen diario</button><button class="btn sec chico" data-prueba="semanal">Resumen semanal</button>
-      <button class="btn sec chico" data-prueba="alerta">Alerta del SMN</button><button class="btn sec chico" data-prueba="sismo">Aviso de sismo</button></div>
+      <button class="btn sec chico" data-prueba="alerta">Alerta del SMN</button><button class="btn sec chico" data-prueba="sismo">Aviso de sismo</button><button class="btn sec chico" data-prueba="inundacion">Aviso de crecida</button></div>
     <div class="nota" id="pruebaNota">Si la prueba no llega, tocá “Diagnóstico” para ver el motivo.</div>
     <button class="btn sec" id="btnDiag">🔍 Diagnóstico de avisos y widget</button>
     <div class="nota" id="diagNota" style="white-space:pre-line"></div>
     <div id="bloqueVideo"></div>
     <div class="sec-tit">Apariencia</div>
     <div class="seg" id="segTema"><button data-tema="auto" aria-pressed="${tema === "auto"}">Automático</button><button data-tema="claro" aria-pressed="${tema === "claro"}">Claro</button><button data-tema="oscuro" aria-pressed="${tema === "oscuro"}">Oscuro</button></div>
-    <p class="nota">Datos: Open-Meteo (pronóstico), Servicio Meteorológico Nacional (alertas oficiales, CC BY 4.0), USGS (sismos) y BigDataCloud (nombre del lugar). Esta app no es un servicio oficial ni del gobierno; la información es orientativa. En una emergencia llamá al 911.
+    <p class="nota">Datos: pronóstico y ríos de Open-Meteo.com (licencia CC BY 4.0; ríos: modelo GloFAS de Copernicus/ECMWF), Servicio Meteorológico Nacional (alertas oficiales, CC BY 4.0), USGS (sismos) y BigDataCloud (nombre del lugar). Esta app no es un servicio oficial ni del gobierno; la información es orientativa. En una emergencia llamá al 911.
     <br><span class="enlace" role="link" tabindex="0" data-url="https://www.smn.gob.ar/alertas">Alertas oficiales del SMN</span></p>
     <button class="btn" id="btnCerrarAj">Listo</button>`);
   const h = $("#hoja2in");
@@ -207,6 +332,7 @@ function abrirAjustes() {
     estado.ajustes.gps = e.target.checked; guardarAjustes();
     if (e.target.checked) seguirGPS(true); else { if (estado.ubic) { estado.ubic.gps = false; guardar("ubicacion", estado.ubic); pintarUbic(); } }
   });
+  h.querySelector("#btnMisAct").onclick = () => abrirActividades(abrirAjustes);
   h.querySelector("#btnWidget").onclick = async () => {
     const nota = h.querySelector("#widgetNota");
     if (!NATIVO) { nota.textContent = "El widget está disponible en la app instalada en el teléfono."; return; }
@@ -227,7 +353,7 @@ function abrirAjustes() {
   });
   h.querySelector("#btnDiag").onclick = async () => {
     const nota = h.querySelector("#diagNota");
-    if (!NATIVO) { nota.textContent = "El diagnóstico solo está en la app instalada."; return; }
+    if (!NATIVO) { nota.textContent = "No se detecta la parte nativa de Android.\n" + infoNativo(); return; }
     nota.textContent = "Revisando…";
     try {
       await sincronizar();
@@ -280,10 +406,16 @@ function abrirBienvenida() {
     <button class="btn" id="bvGPS">📍 Usar mi ubicación (GPS)</button>
     <div class="nota" id="bvGpsNota">La app sigue tu ubicación y actualiza el clima, el widget y los avisos según dónde estés. Si preferís, elegí una localidad a mano.</div>
     <button class="btn sec" id="bvManual">Elegir una localidad</button>
-    <div class="sec-tit">2. Notificaciones y alertas</div>
+    <div class="sec-tit">2. ¿Qué deporte o actividad hacés?</div>
+    <p class="sutil" style="margin:0">Elegí todas las que quieras: te mostramos el mejor horario y las precauciones solo para eso. Si no elegís ninguna, vas a ver todas.</p>
+    ${selectorActividades(estado.ajustes.actividades)}
+    <div class="nota">¿Hacés otra? Agregala a tu manera:</div>
+    ${bloqueOtras()}
+    <div class="sec-tit">3. Notificaciones y alertas</div>
     ${formularioAjustes()}
     <button class="btn" id="bvListo">Empezar</button>`);
   const h = $("#hoja2in");
+  const leerSel = enlazarSelector(h); enlazarOtras(h);
   enlazarFormulario(h);
   h.querySelector("#bvGPS").onclick = async () => {
     const nota = h.querySelector("#bvGpsNota"); nota.textContent = "Buscando tu ubicación…";
@@ -292,7 +424,7 @@ function abrirBienvenida() {
   };
   h.querySelector("#bvManual").onclick = () => { abrirHoja(); };
   h.querySelector("#bvListo").onclick = () => {
-    estado.ajustes.listo = true; guardarAjustes(); cerrarHoja2();
+    estado.ajustes.actividades = leerSel(); estado.ajustes.listo = true; guardarAjustes(); cerrarHoja2(); render();
     if (!estado.ubic) abrirHoja();
     pedirPermisoNotif({ querySelector: () => null });
   };
@@ -326,6 +458,7 @@ function vistaHoy(d) {
   ${bannerAvisos()}
   <section class="card"><h2>Próximas horas</h2><div class="tira">${horas}</div></section>
   <section class="card"><h2>Próximos 3 días</h2><div class="tira" style="gap:8px">${prox}</div></section>
+  ${tarjetaAstros(d, 0, false)}
   <section class="card"><h2>Ahora mismo</h2><div class="grid">
     <div class="dato"><small>💧 Humedad</small><b>${Math.round(a.relative_humidity_2m)}%</b></div>
     <div class="dato"><small>💨 Viento</small><b>${Math.round(a.wind_speed_10m)} km/h</b></div>
@@ -402,9 +535,63 @@ function vistaRadar(d) {
 
 // Se completan en los pasos siguientes
 // ============================================================
-// AVISOS: alertas oficiales (SMN), estimadas (modelo), sismos y posible tsunami
+// AVISOS: alertas oficiales del SMN, sismos, posible tsunami y crecida de ríos (estimada, aparte)
 // ============================================================
 const FUENTE_SMN = "Servicio Meteorológico Nacional (smn.gob.ar), licencia CC BY 4.0";
+async function cargarRio(forzar = false) {
+  const r = estado.rio;
+  if (!estado.ubic || r.cargando) return;
+  const { lat, lon } = estado.ubic;
+  if (!forzar && r.ts && r.lat === lat && r.lon === lon && Date.now() - r.ts < 3 * 3600000) return;
+  r.cargando = true; r.error = "";
+  try {
+    // Las crecidas históricas de ese lugar se calculan una sola vez y quedan guardadas
+    const clave = lat.toFixed(2) + "," + lon.toFixed(2);
+    const cache = leer("crecida") || {};
+    let u = cache[clave];
+    if (!u) {
+      const rh = await fetch(URL_CRECIDA_HIST(lat.toFixed(4), lon.toFixed(4)));
+      if (!rh.ok) throw new Error("HTTP " + rh.status);
+      u = umbralesCrecida((await rh.json()).daily || {});
+      cache[clave] = u;
+      const claves = Object.keys(cache); if (claves.length > 10) delete cache[claves[0]];
+      guardar("crecida", cache);
+    }
+    let ev = null;
+    if (u.ok) {
+      const rp = await fetch(URL_CRECIDA_PRON(lat.toFixed(4), lon.toFixed(4)));
+      if (!rp.ok) throw new Error("HTTP " + rp.status);
+      const f = new Date(); const hoy = f.getFullYear() + "-" + String(f.getMonth() + 1).padStart(2, "0") + "-" + String(f.getDate()).padStart(2, "0");
+      ev = evaluarCrecida(u, (await rp.json()).daily, hoy);
+    }
+    r.u = u; r.eval = ev; r.lat = lat; r.lon = lon; r.ts = Date.now();
+    sincronizar();
+  } catch (e) {
+    r.error = "No se pudo consultar el caudal de los ríos ahora.";
+  }
+  r.cargando = false;
+  render();
+}
+
+function seccionRio() {
+  const r = estado.rio, out = [`<div class="sec-tit">Ríos e inundaciones</div>`];
+  if (!r.ts) { out.push(r.error ? `<div class="aviso warn">${esc(r.error)} Reintentá en unos minutos.</div>` : `<div class="estado" style="padding:16px">Consultando ríos cercanos…</div>`); return out.join(""); }
+  const e = r.eval, m3 = x => Math.round(x).toLocaleString("es-AR") + " m³/s";
+  if (!e) {
+    out.push(`<div class="aviso ok">✅ No se detecta un río importante a menos de unos 5 km de tu ubicación, por eso no hay alerta de crecida. Esto no cubre arroyos chicos ni anegamientos por lluvia intensa: ante lluvias fuertes seguí las alertas del SMN.</div>`);
+  } else if (e.nivel === 0) {
+    out.push(`<div class="aviso ok">✅ Caudal normal en el río cercano. En los próximos 7 días se espera hasta ${m3(e.pico)}; una crecida frecuente empieza en ${m3(e.q2)}.</div>`);
+  } else {
+    const cuerpo = `<div>Caudal estimado hoy: ${m3(e.actual)} · pico previsto: <b>${m3(e.pico)}</b> el ${esc(fechaLarga(e.diaPico))} (${e.tendencia}).</div>
+      <div class="sutil">Referencias de este lugar: crecida frecuente (cada ~2 años) ${m3(e.q2)} · fuerte (cada ~5) ${m3(e.q5)} · extrema (cada ~20) ${m3(e.q20)}.</div>` +
+      lista("Qué hacer", PRECAUCIONES_CRECIDA[e.nivel]) +
+      `<div class="nota">Estimación del modelo GloFAS (Copernicus) vía Open-Meteo para el río más grande en unos 5 km. Puede no ser el río que tenés en mente. No reemplaza a las alertas del INA (ina.gob.ar) ni de Defensa Civil.</div>`;
+    out.push(tarjetaAviso("rio", e.nivel, "🌊", "Crecida del río cercano", "Pico " + fechaLarga(e.diaPico), NIVELES[e.nivel].nombre, cuerpo));
+  }
+  if (r.error) out.push(`<div class="aviso warn">${esc(r.error)}</div>`);
+  return out.join("");
+}
+
 async function cargarAvisos(forzar = false) {
   const av = estado.avisos;
   if (!estado.ubic || av.cargando) return;
@@ -433,13 +620,14 @@ async function cargarAvisos(forzar = false) {
 function avisosActivos() {
   const av = estado.avisos, r = { oficiales: [], estimadas: [], sismos: [], max: 0 };
   if (av.smn && av.smn.alertas) r.oficiales = av.smn.alertas.map(a => ({ ...a, n: NIVEL_SMN[a.nivel] || 1 }));
-  r.estimadas = estado.datos ? alertasClima(estado.datos) : [];
+  r.estimadas = []; // las alertas meteorológicas son solo las oficiales del SMN
   const hace24 = Date.now() - 24 * 3600000;
   r.sismos = (av.sismos || []).filter(s => s.tiempo >= hace24 || s.tsunami);
   const nOf = r.oficiales.reduce((m, a) => Math.max(m, a.n), 0);
   const nEs = r.estimadas.reduce((m, a) => Math.max(m, a.nivel), 0);
   const nSi = r.sismos.reduce((m, s) => Math.max(m, s.tsunami ? 3 : s.nivel), 0);
-  r.max = Math.max(nOf, nEs, nSi);
+  r.nRio = estado.rio && estado.rio.eval ? estado.rio.eval.nivel : 0;
+  r.max = Math.max(nOf, nEs, nSi, r.nRio);
   r.maxOficial = Math.max(nOf, nSi);
   return r;
 }
@@ -452,7 +640,11 @@ function bannerAvisos() {
   let texto;
   if (of) texto = `<b>Alerta ${esc(of.nivel)} del SMN</b> · ${esc(of.evento || of.titular)}`;
   else if (si) texto = si.tsunami ? `<b>Sismo M${si.mag.toFixed(1)} con posible tsunami</b> · ${esc(si.lugar)}` : `<b>Sismo M${si.mag.toFixed(1)} ${esc(si.hace)}</b> · ${esc(si.lugar)}`;
-  else { const a = r.estimadas.find(x => x.nivel === r.max); texto = `<b>${FENOMENOS[a.fenomeno].emoji} ${esc(FENOMENOS[a.fenomeno].nombre)} (estimado)</b> · ${a.dia === 0 ? "hoy" : "mañana"}`; }
+  else {
+    const a = r.estimadas.find(x => x.nivel === r.max);
+    if (a) texto = `<b>${FENOMENOS[a.fenomeno].emoji} ${esc(FENOMENOS[a.fenomeno].nombre)} (estimado)</b> · ${a.dia === 0 ? "hoy" : "mañana"}`;
+    else texto = `<b>🌊 Posible crecida del río cercano (estimado)</b> · pico ${esc(fechaLarga(estado.rio.eval.diaPico))}`;
+  }
   return `<button class="banner n${r.max}" data-tab-ir="avisos"><span class="e">${n.emoji}</span><span>${texto}<br><small style="opacity:.75">Tocá para ver qué hacer</small></span></button>`;
 }
 function pintarPuntoAviso() {
@@ -496,14 +688,8 @@ function vistaAvisos(d) {
       (s.url ? `<div class="nota"><span class="enlace" role="link" tabindex="0" data-url="${esc(s.url)}">Ver ficha del USGS</span></div>` : "");
     out.push(tarjetaAviso("sis" + i, n, s.tsunami ? "🌊" : "🌍", `Sismo M${s.mag.toFixed(1)} · ${s.lugar}`, `${s.hace} · a ${s.distKm} km`, s.tsunami ? "Posible tsunami" : NIVELES[n].nombre, cuerpo));
   });
-  // --- estimadas ---
-  out.push(`<div class="sec-tit">Estimadas por el modelo (no oficiales)</div>`);
-  if (!r.estimadas.length) out.push(`<div class="aviso ok">✅ El pronóstico no indica fenómenos peligrosos para hoy ni mañana.</div>`);
-  r.estimadas.forEach((a, i) => {
-    const f = FENOMENOS[a.fenomeno], n = NIVELES[a.nivel];
-    out.push(tarjetaAviso("est" + i, a.nivel, f.emoji, f.nombre, `${a.dia === 0 ? "Hoy" : "Mañana"} · ${fechaLarga(a.fecha)}`, n.nombre,
-      `<div>${esc(a.detalle)}.</div>${lista("Precauciones", precauciones(a.fenomeno, a.nivel))}<div class="nota">Estimación automática con datos del modelo Open-Meteo. No reemplaza a las alertas oficiales.</div>`));
-  });
+  // --- ríos e inundaciones ---
+  out.push(seccionRio());
   // --- movilidad ---
   const di = d.daily;
   const mov = [["🏍️", "Moto", condicionMoto(di)], ["🚗", "Auto", condicionAuto(di)], ["🚶", "Caminando", condicionCaminando(di)]]
@@ -514,15 +700,28 @@ function vistaAvisos(d) {
 }
 
 function colorPuntaje(p) { return p >= 80 ? "var(--ok)" : p >= 60 ? "#0ea5e9" : p >= 40 ? "var(--n1)" : "var(--n3)"; }
+// Alertas oficiales del SMN que cubren (aunque sea en parte) el día elegido
+function alertasSmnDelDia(d, dia) {
+  const f = (d.daily.time || [])[dia];
+  if (!f) return [];
+  const [y, m, dd] = f.split("-").map(Number);
+  const ini = new Date(y, m - 1, dd).getTime(), fin = ini + 86400000;
+  return avisosActivos().oficiales.filter(a => (a.desde || 0) < fin && (!a.hasta || a.hasta > ini)).sort((x, z) => z.n - x.n);
+}
+function actividadesUsuarioOTodas() {
+  const m = actividadesDelUsuario();
+  return { personalizada: m.length > 0, lista: m.length ? m : ACTIVIDADES };
+}
 function vistaActividades(d) {
   const dias = (d.daily.time || []).slice(0, 5);
   if (estado.actDia >= dias.length) estado.actDia = 0;
   const chips = dias.map((f, i) => `<button class="chip" data-actdia="${i}" aria-pressed="${i === estado.actDia}">${nombreDia(f, i)}</button>`).join("");
-  const lista = actividadesDelDia(d, estado.actDia);
-  const alsDia = alertasClima(d, [estado.actDia]);
+  const mias = actividadesUsuarioOTodas();
+  const lista = actividadesDelDia(d, estado.actDia, mias.lista);
+  const alsDia = alertasSmnDelDia(d, estado.actDia);
   const alDia = alsDia.length ? (() => {
-    const a = alsDia[0], n = NIVELES[a.nivel], f = FENOMENOS[a.fenomeno], mas = alsDia.length - 1;
-    return `<div class="alerta-dia n${a.nivel}"><span>${n.emoji}</span><div><b>${f.emoji} ${esc(f.nombre)} previstas este día</b> · ${esc(a.detalle)}.${mas ? ` Hay ${mas} aviso${mas > 1 ? "s" : ""} más en la solapa Avisos.` : ""} Revisá bien los horarios.</div></div>`;
+    const a = alsDia[0], n = NIVELES[a.n], f = FENOMENOS[precaucionesSmn(a).fenomeno], mas = alsDia.length - 1;
+    return `<div class="alerta-dia n${a.n}"><span>${n.emoji}</span><div><b>${f ? f.emoji : "⚠️"} Alerta ${esc(a.nivel)} del SMN: ${esc(a.evento || a.titular)}</b> · ${esc(vigenciaSmn(a))}.${mas ? ` Hay ${mas} alerta${mas > 1 ? "s" : ""} más en la solapa Avisos.` : ""} Revisá bien los horarios.</div></div>`;
   })() : "";
   const tarjetas = lista.map(r => {
     if (r.sinHorario) return `<div class="act"><div class="cab"><span class="e">${r.emoji}</span><div><div class="nom">${esc(r.nombre)}</div><div class="sub">Ya no quedan horas útiles hoy</div></div></div></div>`;
@@ -534,7 +733,10 @@ function vistaActividades(d) {
       <div><div class="nom">${esc(r.nombre)}</div><div class="sub">🕒 ${r.ventana}</div></div><span class="veredicto v-${r.veredicto.clase}">${r.veredicto.texto}</span></div>
       <div class="puntaje"><i style="width:${Math.max(4, r.puntaje)}%;background:${colorPuntaje(r.puntaje)}"></i></div>${det}</button>`;
   }).join("");
+  const cab = `<div class="act-cab"><div><b>${mias.personalizada ? "Tus actividades" : "Todas las actividades"}</b><div class="sutil">${mias.personalizada ? "Solo las que elegiste" : "Elegí las tuyas para personalizar esta solapa"}</div></div><button class="btn ${mias.personalizada ? "sec " : ""}chico" data-editar-act>✏️ ${mias.personalizada ? "Personalizar" : "Elegir"}</button></div>`;
   return `<div class="chips" role="group" aria-label="Día">${chips}</div>
+    ${cab}
+    ${tarjetaAstros(d, estado.actDia, true)}
     <p class="sutil" style="margin:0">Qué tan bueno es el día para hacer actividades al aire libre en ${esc(estado.ubic.nombre)}. Tocá una para ver el mejor horario y las precauciones.</p>
     ${alDia}${tarjetas}
     <p class="pie">Es una estimación con el pronóstico del modelo Open-Meteo. Ante tormentas o alertas oficiales, no salgas.</p>`;
@@ -568,10 +770,12 @@ function render() {
 $("#tabs").addEventListener("click", e => {
   const b = e.target.closest("button[data-tab]"); if (!b) return;
   estado.tab = b.dataset.tab; guardar("tab", estado.tab); render(); $("#vista").scrollTop = 0;
-  if (estado.tab === "avisos") cargarAvisos();
+  if (estado.tab === "avisos") { cargarAvisos(); cargarRio(); }
+  if (estado.tab === "activ") cargarAvisos();
   if (window.ANUNCIOS) window.ANUNCIOS.transicion();
 });
 $("#vista").addEventListener("click", e => {
+  if (e.target.closest("[data-editar-act]")) { abrirActividades(); return; }
   const m = e.target.closest("[data-metrica]"); if (m) { estado.metrica = m.dataset.metrica; render(); return; }
   const ir = e.target.closest("[data-tab-ir]"); if (ir) { estado.tab = ir.dataset.tabIr; guardar("tab", estado.tab); render(); $("#vista").scrollTop = 0; cargarAvisos(); return; }
   const ur = e.target.closest("[data-url]"); if (ur) { abrirEnlace(ur.dataset.url); return; }
@@ -616,7 +820,7 @@ $("#buscar").addEventListener("input", e => {
     const mi = ++seqBusca;
     try {
       const p = new URLSearchParams({ name: q, count: "10", language: "es", countryCode: "AR" });
-      const r = await (await fetch(`${URL_GEO}?${p}`)).json();
+      const r = await (await fetch(`${URL_GEO}?${p}${omClave}`)).json();
       if (mi !== seqBusca) return;
       const res = r.results || [];
       $("#resultados").innerHTML = res.length ? res.map((x, i) => `<button data-i="${i}">${esc(x.name)}<small>${esc([x.admin2, x.admin1].filter(Boolean).join(", "))}</small></button>`).join("") : `<div class="estado" style="padding:16px">Sin resultados</div>`;

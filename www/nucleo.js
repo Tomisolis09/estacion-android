@@ -3,8 +3,16 @@
 // NÚCLEO: constantes, utilidades y lógica pura (sin interfaz).
 // Se usa en la app y se prueba en Node (ver tests/).
 // ============================================================
-const URL_CLIMA = "https://api.open-meteo.com/v1/forecast";
-const URL_GEO = "https://geocoding-api.open-meteo.com/v1/search";
+// LICENCIA COMERCIAL DE OPEN-METEO
+// El servicio gratuito es solo para uso NO comercial (una app con anuncios es comercial). Al contratar el plan de
+// open-meteo.com/en/pricing te dan una clave: pegala entre las comillas y la app pasa sola al servidor de clientes
+// (customer-api.open-meteo.com), tanto en el pronóstico como en el widget, los avisos y los ríos.
+// Dejala vacía mientras no tengas plan.
+const OPEN_METEO_CLAVE = "";
+const omServidor = sub => `https://${OPEN_METEO_CLAVE ? "customer-" : ""}${sub}.open-meteo.com`;
+const omClave = OPEN_METEO_CLAVE ? `&apikey=${encodeURIComponent(OPEN_METEO_CLAVE)}` : "";
+const URL_CLIMA = omServidor("api") + "/v1/forecast";
+const URL_GEO = omServidor("geocoding-api") + "/v1/search";
 const URL_SISMOS = "https://earthquake.usgs.gov/fdsnws/event/1/query";
 const URL_REVERSA = "https://api.bigdatacloud.net/data/reverse-geocode-client";
 const DIAS = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
@@ -434,16 +442,166 @@ function filtrarSismos(geojson, lat, lon, sens = "moderada", ahora = Date.now())
 }
 
 // ============================================================
-// FASE LUNAR (aproximada, para observación de estrellas)
+// SOL Y LUNA: salida, puesta y fases (cálculo astronómico local, funciona sin internet)
+// Fórmulas astronómicas estándar de baja precisión: los horarios pueden diferir 1-2 minutos (sol)
+// y algunos minutos (luna) de los almanaques oficiales.
 // ============================================================
+const AST = (() => {
+  const RAD = Math.PI / 180, DIA_MS = 86400000, J1970 = 2440588, J2000 = 2451545, OBL = RAD * 23.4397;
+  const aJuliano = ms => ms / DIA_MS - 0.5 + J1970;
+  const aMs = j => (j + 0.5 - J1970) * DIA_MS;
+  const aDias = ms => aJuliano(ms) - J2000;
+  const ascRecta = (l, b) => Math.atan2(Math.sin(l) * Math.cos(OBL) - Math.tan(b) * Math.sin(OBL), Math.cos(l));
+  const declinacion = (l, b) => Math.asin(Math.sin(b) * Math.cos(OBL) + Math.cos(b) * Math.sin(OBL) * Math.sin(l));
+  const tiempoSideral = (d, lw) => RAD * (280.16 + 360.9856235 * d) - lw;
+  const refraccion = h => { if (h < 0) h = 0; return 0.0002967 / Math.tan(h + 0.00312536 / (h + 0.08901179)); };
+  const altura = (H, phi, dec) => Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(H));
+
+  const anomaliaSol = d => RAD * (357.5291 + 0.98560028 * d);
+  const longEclip = M => {
+    const C = RAD * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M));
+    return M + C + RAD * 102.9372 + Math.PI;
+  };
+  const coordsSol = d => { const M = anomaliaSol(d), L = longEclip(M); return { dec: declinacion(L, 0), ra: ascRecta(L, 0), M, L }; };
+
+  const J0 = 0.0009;
+  const ciclo = (d, lw) => Math.round(d - J0 - lw / (2 * Math.PI));
+  const transitoAprox = (Ht, lw, n) => J0 + (Ht + lw) / (2 * Math.PI) + n;
+  const transitoSolar = (ds, M, L) => J2000 + ds + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L);
+
+  // Sol: salida, mediodía solar y puesta (ms UTC) para el día en que cae "ms". Devuelve null si no sale/pone ese día.
+  function solDelDia(ms, lat, lon) {
+    const lw = RAD * -lon, phi = RAD * lat, d = aDias(ms), n = ciclo(d, lw), ds = transitoAprox(0, lw, n);
+    const M = anomaliaSol(ds), L = longEclip(M), dec = declinacion(L, 0), Jnoon = transitoSolar(ds, M, L);
+    const cosw = (Math.sin(-0.833 * RAD) - Math.sin(phi) * Math.sin(dec)) / (Math.cos(phi) * Math.cos(dec));
+    if (!isFinite(cosw) || cosw < -1 || cosw > 1) return { mediodia: aMs(Jnoon), sale: null, pone: null };
+    const w = Math.acos(cosw);
+    const a = transitoAprox(w, lw, n), Jset = transitoSolar(a, M, L), Jrise = Jnoon - (Jset - Jnoon);
+    return { mediodia: aMs(Jnoon), sale: aMs(Jrise), pone: aMs(Jset) };
+  }
+
+  // Luna
+  function coordsLuna(d) {
+    const L = RAD * (218.316 + 13.176396 * d), M = RAD * (134.963 + 13.064993 * d), F = RAD * (93.272 + 13.22935 * d);
+    const l = L + RAD * 6.289 * Math.sin(M), b = RAD * 5.128 * Math.sin(F), dt = 385001 - 20905 * Math.cos(M);
+    return { ra: ascRecta(l, b), dec: declinacion(l, b), dist: dt };
+  }
+  function alturaLuna(ms, lat, lon) {
+    const lw = RAD * -lon, phi = RAD * lat, d = aDias(ms), c = coordsLuna(d);
+    const H = tiempoSideral(d, lw) - c.ra, h = altura(H, phi, c.dec);
+    return h + refraccion(h);
+  }
+  // fase: 0 nueva, 0.25 cuarto creciente, 0.5 llena, 0.75 cuarto menguante. fraccion: parte iluminada (0..1).
+  function iluminacion(ms) {
+    const d = aDias(ms), s = coordsSol(d), m = coordsLuna(d), sdist = 149598000;
+    const phi = Math.acos(Math.sin(s.dec) * Math.sin(m.dec) + Math.cos(s.dec) * Math.cos(m.dec) * Math.cos(s.ra - m.ra));
+    const inc = Math.atan2(sdist * Math.sin(phi), m.dist - sdist * Math.cos(phi));
+    const ang = Math.atan2(Math.cos(s.dec) * Math.sin(s.ra - m.ra), Math.sin(s.dec) * Math.cos(m.dec) - Math.cos(s.dec) * Math.sin(m.dec) * Math.cos(s.ra - m.ra));
+    return { fraccion: (1 + Math.cos(inc)) / 2, fase: faseElongacion(d) };
+  }
+  // Fase a partir de la diferencia de longitud eclíptica Luna-Sol (con las correcciones principales de la órbita lunar)
+  function faseElongacion(d) {
+    const Ms = anomaliaSol(d), ls = longEclip(Ms);
+    const Lm = RAD * (218.3164477 + 13.17639648 * d), Mm = RAD * (134.9634 + 13.06499295 * d);
+    const D = RAD * (297.8502 + 12.19074912 * d);
+    const lm = Lm + RAD * (6.289 * Math.sin(Mm) + 1.274 * Math.sin(2 * D - Mm) + 0.658 * Math.sin(2 * D) + 0.214 * Math.sin(2 * Mm) - 0.186 * Math.sin(Ms) - 0.114 * Math.sin(2 * (Lm - RAD * 93.272)));
+    return ((((lm - ls) / (2 * Math.PI)) % 1) + 1) % 1;
+  }
+  // Salida y puesta de la Luna entre inicioMs y inicioMs + 24 h (se revisa hora por hora)
+  function lunaDelDia(inicioMs, lat, lon) {
+    const hc = 0.133 * RAD, H = 3600000;
+    let h0 = alturaLuna(inicioMs, lat, lon) - hc, sale = null, pone = null;
+    for (let i = 1; i <= 24; i += 2) {
+      const h1 = alturaLuna(inicioMs + i * H, lat, lon) - hc, h2 = alturaLuna(inicioMs + (i + 1) * H, lat, lon) - hc;
+      const a = (h0 + h2) / 2 - h1, b = (h2 - h0) / 2, xe = -b / (2 * a), ye = (a * xe + b) * xe + h1, disc = b * b - 4 * a * h1;
+      let raices = 0, x1 = 0, x2 = 0;
+      if (disc >= 0) {
+        const dx = Math.sqrt(disc) / (Math.abs(a) * 2);
+        x1 = xe - dx; x2 = xe + dx;
+        if (Math.abs(x1) <= 1) raices++;
+        if (Math.abs(x2) <= 1) raices++;
+        if (x1 < -1) x1 = x2;
+      }
+      if (raices === 1) { if (h0 < 0) sale = i + x1; else pone = i + x1; }
+      else if (raices === 2) { sale = i + (ye < 0 ? x2 : x1); pone = i + (ye < 0 ? x1 : x2); }
+      if (sale !== null && pone !== null) break;
+      h0 = h2;
+    }
+    return { sale: sale === null ? null : inicioMs + sale * H, pone: pone === null ? null : inicioMs + pone * H };
+  }
+  return { solDelDia, lunaDelDia, iluminacion, DIA_MS };
+})();
+
+// Fases: nombre, emoji (el dibujo se espeja en el hemisferio sur, donde la Luna se ve "al revés")
+function nombreFase(f) {
+  return f < 0.03 || f > 0.97 ? "nueva" : f < 0.22 ? "creciente" : f < 0.28 ? "en cuarto creciente"
+    : f < 0.47 ? "gibosa creciente" : f < 0.53 ? "llena" : f < 0.72 ? "gibosa menguante"
+    : f < 0.78 ? "en cuarto menguante" : "menguante";
+}
+function emojiFase(f, lat = -34) {
+  const norte = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"];
+  let k = Math.round(f * 8) % 8;
+  if (lat < 0 && k !== 0 && k !== 4) k = 8 - k; // espejo: creciente <-> menguante
+  return norte[k];
+}
+function titularFase(f) {
+  const n = nombreFase(f);
+  return n === "nueva" ? "Luna nueva" : n === "llena" ? "Luna llena" : n === "creciente" ? "Luna creciente"
+    : n === "menguante" ? "Luna menguante" : n === "en cuarto creciente" ? "Cuarto creciente"
+    : n === "en cuarto menguante" ? "Cuarto menguante" : n === "gibosa creciente" ? "Gibosa creciente" : "Gibosa menguante";
+}
+
+// Compatibilidad: usada por la actividad "Observar estrellas"
 function faseLunar(fecha = new Date()) {
-  const jd = fecha.getTime() / 86400000 + 2440587.5;
-  const fase = (((jd - 2451550.26) / 29.530588853) % 1 + 1) % 1;
-  const iluminacion = (1 - Math.cos(2 * Math.PI * fase)) / 2;
-  const nombre = fase < 0.03 || fase > 0.97 ? "nueva" : fase < 0.22 ? "creciente" : fase < 0.28 ? "en cuarto creciente"
-    : fase < 0.47 ? "gibosa creciente" : fase < 0.53 ? "llena" : fase < 0.72 ? "gibosa menguante"
-    : fase < 0.78 ? "en cuarto menguante" : "menguante";
-  return { fase, iluminacion, nombre };
+  const il = AST.iluminacion(fecha.getTime());
+  return { fase: il.fase, iluminacion: il.fraccion, nombre: nombreFase(il.fase) };
+}
+
+const hhmm = (ms, offSeg) => {
+  const d = new Date(ms + offSeg * 1000);
+  return String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0");
+};
+const fechaCorta = (ms, offSeg) => { const d = new Date(ms + offSeg * 1000); return d.getUTCDate() + "/" + (d.getUTCMonth() + 1); };
+
+// Todo lo de Sol y Luna para un día ("2026-10-12") en un lugar. offSeg = diferencia horaria del lugar con UTC.
+function astrosDelDia(fechaISO, lat, lon, offSeg) {
+  const [y, m, d] = fechaISO.slice(0, 10).split("-").map(Number);
+  const inicio = Date.UTC(y, m - 1, d) - offSeg * 1000;
+  const mediodia = inicio + 12 * 3600000;
+  const sol = AST.solDelDia(mediodia, lat, lon);
+  const lunaH = AST.lunaDelDia(inicio, lat, lon);
+  const il = AST.iluminacion(mediodia);
+  const luz = sol.sale !== null && sol.pone !== null ? Math.round((sol.pone - sol.sale) / 60000) : null;
+  const t = ms => ms === null ? null : hhmm(ms, offSeg);
+  return {
+    sol: { sale: t(sol.sale), pone: t(sol.pone), mediodia: t(sol.mediodia), luzMin: luz,
+      saleMs: sol.sale, poneMs: sol.pone },
+    luna: { sale: t(lunaH.sale), pone: t(lunaH.pone), fase: il.fase, iluminacion: il.fraccion,
+      nombre: titularFase(il.fase), emoji: emojiFase(il.fase, lat), edad: il.fase * 29.530588853 },
+  };
+}
+
+// Próximas fases principales (nueva, cuarto creciente, llena, cuarto menguante) a partir de un momento
+function proximasFases(desdeMs, offSeg, lat = -34, cantidad = 4) {
+  const nombres = [["Luna nueva", 0], ["Cuarto creciente", 2], ["Luna llena", 4], ["Cuarto menguante", 6]];
+  const emojis = k => emojiFase(k / 8, lat);
+  const dist = (ms, b) => ((AST.iluminacion(ms).fase - b + 1.5) % 1) - 0.5; // distancia con signo a la fase objetivo
+  const salida = [], paso = 6 * 3600000;
+  let t = desdeMs;
+  for (let n = 0; n < 4 * 40 && salida.length < cantidad; n++, t += paso) {
+    const a = AST.iluminacion(t).fase, b = AST.iluminacion(t + paso).fase;
+    const ua = a, ub = b < a ? b + 1 : b;
+    const k = Math.floor(ua * 4 + 1e-9) + 1;
+    if (k / 4 <= ub + 1e-12 && Math.floor(ub * 4) >= k) {
+      const objetivo = (k / 4) % 1;
+      let lo = t, hi = t + paso;
+      for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (dist(mid, objetivo) < 0) lo = mid; else hi = mid; }
+      const ms = Math.round((lo + hi) / 2);
+      const [nom, idx] = nombres[k % 4];
+      if (ms > desdeMs) salida.push({ nombre: nom, emoji: emojis(idx), ms, fecha: fechaCorta(ms, offSeg), hora: hhmm(ms, offSeg) });
+    }
+  }
+  return salida;
 }
 
 // ============================================================
@@ -475,6 +633,22 @@ const ACTIVIDADES = [
     tips: ["Usá chaleco salvavidas siempre y avisá tu recorrido.", "Volvé a la costa si sube el viento o aparecen nubes oscuras.", "Las ráfagas pueden dar vuelta embarcaciones chicas."] },
   { id: "drone", nombre: "Drone", emoji: "🚁", ventana: [8, 20], dur: 1, ideal: [5, 30], limite: [-5, 38], vientoIdeal: 15, vientoLimite: 28, lluvia: 2, uv: 0, nubes: 0, vis: true,
     tips: ["Volá siempre a la vista y respetá la normativa de la ANAC.", "No vueles con lluvia ni con ráfagas: pueden llevarse el drone.", "El frío reduce la batería: llevá repuestos y mantenelas abrigadas."] },
+  { id: "caminata", nombre: "Caminata", emoji: "🚶", ventana: [6, 21], dur: 1, ideal: [10, 24], limite: [-3, 32], vientoIdeal: 25, vientoLimite: 50, lluvia: 0.8, uv: 0.4, nubes: 0, vis: false,
+    tips: ["Usá calzado cómodo y llevá agua si vas a caminar más de una hora.", "Con poca luz caminá por lugares iluminados y con ropa clara o reflectante.", "Con calor evitá las horas centrales del día y buscá sombra."] },
+  { id: "tenis", nombre: "Tenis y pádel", emoji: "🎾", ventana: [8, 21], dur: 2, ideal: [14, 27], limite: [4, 34], vientoIdeal: 15, vientoLimite: 30, lluvia: 1.2, uv: 0.5, nubes: 0, vis: false,
+    tips: ["Con viento fuerte la pelota se vuelve impredecible: ajustá tus tiros.", "Con la cancha mojada hay más riesgo de resbalones.", "Con calor hidratate en cada cambio de lado y usá gorra y protector solar."] },
+  { id: "yoga", nombre: "Yoga y gimnasia al aire libre", emoji: "🧘", ventana: [6, 20], dur: 1, ideal: [14, 26], limite: [5, 33], vientoIdeal: 20, vientoLimite: 40, lluvia: 1, uv: 0.4, nubes: 0, vis: false,
+    tips: ["Con el pasto húmedo usá una colchoneta gruesa o buscá una superficie seca.", "Entrá en calor antes de estirar, sobre todo si hace frío.", "Evitá el sol fuerte del mediodía y tené agua a mano."] },
+  { id: "escalada", nombre: "Escalada", emoji: "🧗", ventana: [8, 19], dur: 3, ideal: [8, 24], limite: [-2, 31], vientoIdeal: 20, vientoLimite: 40, lluvia: 1.8, uv: 0.3, nubes: 0, vis: false,
+    tips: ["La roca mojada resbala mucho y puede soltarse: no escales después de lluvia.", "Revisá tu equipo y asegurate con compañeros experimentados.", "Con viento fuerte o tormenta bajá enseguida: las paredes expuestas son peligrosas."] },
+  { id: "golf", nombre: "Golf", emoji: "⛳", ventana: [8, 19], dur: 4, ideal: [12, 28], limite: [2, 35], vientoIdeal: 20, vientoLimite: 40, lluvia: 1.2, uv: 0.4, nubes: 0, vis: false,
+    tips: ["Con tormenta eléctrica volvé al club: los palos atraen rayos y la cancha es zona abierta.", "Protegete del sol: gorra, anteojos y protector solar.", "Con viento fuerte ajustá la elección del palo."] },
+  { id: "skate", nombre: "Skate y patín", emoji: "🛹", ventana: [8, 21], dur: 1, ideal: [12, 28], limite: [2, 35], vientoIdeal: 25, vientoLimite: 45, lluvia: 2, uv: 0.3, nubes: 0, vis: false,
+    tips: ["Usá casco y protecciones, siempre.", "Con el piso mojado o con hojas el riesgo de caída es muy alto.", "Con poca luz evitá calles con tránsito y usá luces o elementos reflectantes."] },
+  { id: "moto", nombre: "Moto", emoji: "🏍️", ventana: [8, 20], dur: 2, ideal: [14, 28], limite: [3, 36], vientoIdeal: 20, vientoLimite: 40, lluvia: 1.6, uv: 0.3, nubes: 0, vis: true,
+    tips: ["Casco bien abrochado y ropa con protecciones.", "Con lluvia, el piso mojado y la pintura vial resbalan: aumentá la distancia de frenado.", "El viento lateral y las ráfagas, sobre todo cerca de camiones, pueden sacarte de tu línea."] },
+  { id: "equitacion", nombre: "Equitación", emoji: "🐎", ventana: [7, 20], dur: 2, ideal: [10, 26], limite: [-2, 33], vientoIdeal: 20, vientoLimite: 38, lluvia: 1.2, uv: 0.4, nubes: 0, vis: false,
+    tips: ["Usá casco y botas con taco. Los caballos se asustan con truenos y ráfagas.", "Con calor intenso dales agua y sombra, y bajá el ritmo.", "Con el suelo mojado o helado el riesgo de resbalar es mayor."] },
   { id: "astro", nombre: "Observar estrellas", emoji: "🌌", ventana: [21, 29], dur: 2, ideal: [8, 24], limite: [-8, 32], vientoIdeal: 25, vientoLimite: 45, lluvia: 1, uv: 0, nubes: 1, vis: true,
     tips: ["Alejate de las luces de la ciudad y dejá 20 minutos que se adapte la vista.", "Abrigate más de lo que creés: de noche baja mucho la temperatura.", "Usá luz roja y avisá a alguien dónde vas a estar."] },
 ];
@@ -558,7 +732,7 @@ function evaluarActividad(datos, a, dia) {
   };
 
   const notas = [];
-  if (a.id === "astro") {
+  if ((a.base || a.id) === "astro") {
     const f = faseLunar(new Date(fecha + "T22:00:00"));
     puntaje -= Math.max(0, f.iluminacion - 0.4) * 40;
     notas.push(`🌙 Luna ${f.nombre} (${Math.round(f.iluminacion * 100)}% iluminada): ` + (f.iluminacion > 0.6 ? "su brillo dificulta ver estrellas débiles." : "buen momento para observar."));
@@ -584,10 +758,78 @@ function evaluarActividad(datos, a, dia) {
   };
 }
 
-function actividadesDelDia(datos, dia) {
-  return ACTIVIDADES.map(a => evaluarActividad(datos, a, dia)).filter(Boolean)
+function actividadesDelDia(datos, dia, lista = ACTIVIDADES) {
+  return lista.map(a => evaluarActividad(datos, a, dia)).filter(Boolean)
     .sort((x, y) => y.puntaje - x.puntaje);
 }
+
+// ============================================================
+// RÍOS E INUNDACIONES (caudal estimado por el modelo GloFAS, vía Open-Meteo)
+// ============================================================
+// El servicio devuelve el caudal (m³/s) del río más grande en unos 5 km a la redonda. Si no hay río, devuelve vacío.
+// No hay un "nivel de alerta" oficial en el dato: se compara el caudal previsto con las crecidas históricas de ese mismo
+// lugar (1990-2022): la que ocurre en promedio cada 2 años = amarilla, cada 5 = naranja, cada 20 = roja.
+const URL_CRECIDA_HIST = (lat, lon) => `${omServidor("flood-api")}/v1/flood?latitude=${lat}&longitude=${lon}&daily=river_discharge&start_date=1990-01-01&end_date=2022-12-31&timezone=GMT${omClave}`;
+const URL_CRECIDA_PRON = (lat, lon) => `${omServidor("flood-api")}/v1/flood?latitude=${lat}&longitude=${lon}&daily=river_discharge&past_days=3&forecast_days=10&timezone=GMT${omClave}`;
+
+// Calcula las crecidas de 2, 5 y 20 años con los máximos anuales (posición de Weibull). daily = { time[], river_discharge[] }
+function umbralesCrecida(daily) {
+  const t = (daily && daily.time) || [], v = (daily && daily.river_discharge) || [];
+  const porAnio = {}, todos = [];
+  for (let i = 0; i < t.length; i++) {
+    if (v[i] == null || !isFinite(v[i])) continue;
+    const y = String(t[i]).slice(0, 4);
+    (porAnio[y] = porAnio[y] || []).push(v[i]);
+    todos.push(v[i]);
+  }
+  const maximos = [];
+  for (const y in porAnio) { if (porAnio[y].length >= 300) maximos.push(Math.max(...porAnio[y])); }
+  if (maximos.length < 15 || !todos.length) return { ok: false };
+  maximos.sort((a, b) => b - a);
+  todos.sort((a, b) => a - b);
+  const n = maximos.length, mediana = todos[Math.floor(todos.length / 2)];
+  const retorno = T => {
+    if (T >= n + 1) return maximos[0];
+    const pos = (n + 1) / T - 1, i = Math.floor(pos), f = pos - i;
+    return maximos[i] + (maximos[Math.min(i + 1, n - 1)] - maximos[i]) * f;
+  };
+  const q2 = retorno(2), q5 = retorno(5), q20 = retorno(20);
+  // Un caudal muy chico no es un río relevante; y los umbrales tienen que crecer (si no, el dato no sirve)
+  if (mediana < 5 || !(q2 > 0) || !(q5 > q2) || !(q20 > q5)) return { ok: false, chico: mediana < 5 };
+  return { ok: true, q2, q5, q20, mediana, anios: n };
+}
+
+// Evalúa los próximos 7 días (incluido hoy). Devuelve null si el servicio no tiene dato para ese lugar.
+function evaluarCrecida(u, daily, hoyISO) {
+  if (!u || !u.ok || !daily || !daily.time) return null;
+  const t = daily.time, v = daily.river_discharge || [];
+  let actual = null, pico = null, diaPico = null, k = 0;
+  for (let i = 0; i < t.length; i++) {
+    if (v[i] == null) continue;
+    if (t[i] <= hoyISO) actual = v[i];
+    if (t[i] >= hoyISO && k < 7) { k++; if (pico === null || v[i] > pico) { pico = v[i]; diaPico = t[i]; } }
+  }
+  if (pico === null) return null;
+  if (actual === null) actual = pico;
+  const nivel = pico >= u.q20 ? 3 : pico >= u.q5 ? 2 : pico >= u.q2 ? 1 : 0;
+  const tendencia = pico > actual * 1.15 ? "creciendo" : pico < actual * 0.85 ? "bajando" : "estable";
+  return { nivel, pico, diaPico, actual, tendencia, q2: u.q2, q5: u.q5, q20: u.q20, mediana: u.mediana };
+}
+
+const PRECAUCIONES_CRECIDA = [
+  [],
+  ["Mantenete informado: seguí las indicaciones de Defensa Civil y del INA (ina.gob.ar).",
+    "No acampes ni dejes vehículos cerca de la orilla o en cauces secos.",
+    "Con lluvia, evitá cruzar ríos, arroyos y calles anegadas."],
+  ["Alejate de la costa y de zonas bajas cercanas al río. Preparate por si hay que evacuar.",
+    "Dejá a mano documentos, medicamentos, linterna, batería externa y agua.",
+    "Subí a lugares altos objetos de valor y cortá la luz en sectores que puedan inundarse.",
+    "No cruces zonas inundadas ni a pie ni en auto: 30 cm de agua en movimiento pueden arrastrar un vehículo."],
+  ["Riesgo de crecida grave. Si estás en zona baja o cerca del río, seguí las órdenes de evacuación sin demoras.",
+    "Llamá al 103 (Defensa Civil) o al 911 si hay peligro. Avisá a vecinos que necesiten ayuda.",
+    "No vuelvas a la zona hasta que las autoridades lo indiquen.",
+    "Alejate de cables caídos y no toques artefactos eléctricos mojados."],
+];
 
 // ============================================================
 // NOMBRE DEL LUGAR A PARTIR DE LAS COORDENADAS
@@ -656,7 +898,7 @@ if (typeof module !== "undefined" && module.exports) {
     PARAMS, dato, describir, icono, gradiente, nivelUV, indiceHoraActual, analizarRadarSatelite,
     condicionMoto, condicionAuto, condicionCaminando, resumenDia, alertasClima, FENOMENOS, NIVELES,
     PRECAUCIONES, precauciones, distanciaKm, traducirLugar, textoHace, urlSismos, filtrarSismos,
-    cercaDeCosta, faseLunar, ACTIVIDADES, evaluarActividad, actividadesDelDia, CIUDADES, ciudadMasCercana,
-    nombreOffline, nombreDesdeReversa, horaActualDe, fenomenoSmn, precaucionesSmn, estiloNivelSmn, vigenciaSmn, NIVEL_SMN,
+    cercaDeCosta, faseLunar, astrosDelDia, proximasFases, emojiFase, titularFase, ACTIVIDADES, evaluarActividad, actividadesDelDia, CIUDADES, ciudadMasCercana,
+    umbralesCrecida, evaluarCrecida, PRECAUCIONES_CRECIDA, URL_CRECIDA_HIST, URL_CRECIDA_PRON, nombreOffline, nombreDesdeReversa, horaActualDe, fenomenoSmn, precaucionesSmn, estiloNivelSmn, vigenciaSmn, NIVEL_SMN,
   };
 }
