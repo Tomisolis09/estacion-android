@@ -19,7 +19,32 @@ final class Prefs {
     }
 
     static void guardarAjustes(Context c, String json) {
-        sp(c).edit().putString("ajustes", json).apply();
+        SharedPreferences p = sp(c);
+        // Se anota cuándo cambiaron los ajustes (sirve para no avisar "de más" un horario que ya pasó hoy)
+        if (!json.equals(p.getString("ajustes", null))) {
+            p.edit().putString("ajustes", json).putLong("ajustes_ts", System.currentTimeMillis()).apply();
+        }
+    }
+
+    static long ajustesMomento(Context c) {
+        return sp(c).getLong("ajustes_ts", 0);
+    }
+
+    /** Último día (aaaammdd) en que se envió el resumen "diario" o "semanal". */
+    static String envio(Context c, String tipo) {
+        return sp(c).getString("envio_" + tipo, "");
+    }
+
+    static void marcarEnvio(Context c, String tipo, String dia) {
+        sp(c).edit().putString("envio_" + tipo, dia).apply();
+    }
+
+    static void guardarEstadoWidget(Context c, String texto) {
+        sp(c).edit().putString("widget_estado", texto).apply();
+    }
+
+    static String estadoWidget(Context c) {
+        return sp(c).getString("widget_estado", "todavía no se actualizó");
     }
 
     /** null si el usuario todavía no terminó la configuración inicial. */

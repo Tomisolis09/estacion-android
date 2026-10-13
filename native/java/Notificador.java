@@ -43,6 +43,23 @@ final class Notificador {
         return true;
     }
 
+    /** Nombres de los canales que el usuario silenció por completo (vacío si no hay ninguno). */
+    static String canalesBloqueados(Context c) {
+        if (Build.VERSION.SDK_INT < 26) return "";
+        NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return "";
+        StringBuilder sb = new StringBuilder();
+        String[] ids = {CANAL_RESUMEN, CANAL_CLIMA, CANAL_SISMO};
+        for (String id : ids) {
+            NotificationChannel ch = nm.getNotificationChannel(id);
+            if (ch != null && ch.getImportance() == NotificationManager.IMPORTANCE_NONE) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(ch.getName());
+            }
+        }
+        return sb.toString();
+    }
+
     static PendingIntent abrirApp(Context c) {
         Intent i = c.getPackageManager().getLaunchIntentForPackage(c.getPackageName());
         if (i == null) i = new Intent();

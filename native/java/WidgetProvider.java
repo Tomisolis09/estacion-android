@@ -63,18 +63,47 @@ public class WidgetProvider extends AppWidgetProvider {
             if (ids == null || ids.length == 0) return;
             Prefs.Ubic u = Prefs.ubicacion(c);
             Pronostico p = null;
-            if (u != null) {
+            String estado;
+            if (u == null) {
+                estado = "sin ubicación guardada (abrí la app)";
+            } else {
+                // 1) Se dibuja ya mismo con lo último guardado, sin esperar a internet
+                if (descargar) {
+                    try {
+                        pintar(c, m, ids, u, Datos.pronostico(c, u, false));
+                    } catch (Exception e) {
+                        // todavía no hay copia guardada
+                    }
+                }
+                // 2) Se intenta bajar el pronóstico nuevo (tiempo corto: Android corta el receptor a los ~10 s)
                 try {
-                    p = Datos.pronostico(c, u, descargar);
+                    Datos.ultimoError = "";
+                    p = Datos.pronostico(c, u, descargar, 6000);
+                    estado = Datos.ultimoError.length() > 0 ? "con datos guardados (" + Datos.ultimoError + ")" : "ok";
                 } catch (Exception e) {
+                    estado = "sin datos: " + e.getMessage() + " " + Datos.ultimoError;
                     Log.w("EstacionClima", "Widget sin datos: " + e.getMessage());
                 }
             }
-            for (int id : ids) {
-                m.updateAppWidget(id, construir(c, u, p));
-            }
+            pintar(c, m, ids, u, p);
+            Prefs.guardarEstadoWidget(c, estado + " · " + new SimpleDateFormat("d/M HH:mm", Locale.US).format(new Date()));
         } catch (Throwable t) {
             Log.e("EstacionClima", "Widget", t);
+            try {
+                Prefs.guardarEstadoWidget(c, "error: " + t);
+            } catch (Throwable ignorado) {
+                // nada más que hacer
+            }
+        }
+    }
+
+    private static void pintar(Context c, AppWidgetManager m, int[] ids, Prefs.Ubic u, Pronostico p) {
+        for (int id : ids) {
+            try {
+                m.updateAppWidget(id, construir(c, u, p));
+            } catch (Throwable t) {
+                Log.e("EstacionClima", "Widget " + id, t);
+            }
         }
     }
 

@@ -6,8 +6,10 @@ import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 
 /** Lo que se hace cuando suena una alarma: bajar datos y avisar. */
 final class Trabajos {
@@ -32,16 +34,31 @@ final class Trabajos {
     // Resúmenes
     // ------------------------------------------------------------------
 
+    private static String fechaHoy(long ahora) {
+        return new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date(ahora));
+    }
+
+    /** En las pruebas, si algo falla se avisa con una notificación en vez de no mostrar nada. */
+    private static void avisoPrueba(Context c, String titulo, String detalle) {
+        Notificador.mostrar(c, 3998, Notificador.CANAL_RESUMEN, "(Prueba) " + titulo, detalle, detalle);
+    }
+
     static void diario(Context c, boolean forzar) {
         Ajustes a = Prefs.ajustes(c);
         Prefs.Ubic u = Prefs.ubicacion(c);
-        if (u == null || (!forzar && (a == null || !a.diarioOn))) return;
+        if (u == null) {
+            if (forzar) avisoPrueba(c, "Falta la ubicación", "Abrí la app y elegí tu ubicación (GPS o a mano).");
+            return;
+        }
+        if (!forzar && (a == null || !a.diarioOn)) return;
         try {
             Pronostico p = Datos.pronostico(c, u, true);
             Resumen.Texto t = Resumen.diario(p, u.nombre);
             Notificador.mostrar(c, 1001, Notificador.CANAL_RESUMEN, t.titulo, t.corto, t.largo);
+            if (!forzar) Prefs.marcarEnvio(c, "diario", fechaHoy(System.currentTimeMillis()));
         } catch (IOException e) {
             Log.w(ETQ, "Resumen diario sin datos: " + e.getMessage());
+            if (forzar) avisoPrueba(c, "Sin datos del clima", "No se pudo bajar el pronóstico: " + Datos.ultimoError);
         }
         WidgetProvider.refrescarTodosYa(c, false);
     }
@@ -49,13 +66,40 @@ final class Trabajos {
     static void semanal(Context c, boolean forzar) {
         Ajustes a = Prefs.ajustes(c);
         Prefs.Ubic u = Prefs.ubicacion(c);
-        if (u == null || (!forzar && (a == null || !a.semanalOn))) return;
+        if (u == null) {
+            if (forzar) avisoPrueba(c, "Falta la ubicación", "Abrí la app y elegí tu ubicación (GPS o a mano).");
+            return;
+        }
+        if (!forzar && (a == null || !a.semanalOn)) return;
         try {
             Pronostico p = Datos.pronostico(c, u, true);
             Resumen.Texto t = Resumen.semanal(p, u.nombre);
             Notificador.mostrar(c, 1002, Notificador.CANAL_RESUMEN, t.titulo, t.corto, t.largo);
+            if (!forzar) Prefs.marcarEnvio(c, "semanal", fechaHoy(System.currentTimeMillis()));
         } catch (IOException e) {
             Log.w(ETQ, "Resumen semanal sin datos: " + e.getMessage());
+            if (forzar) avisoPrueba(c, "Sin datos del clima", "No se pudo bajar el pronóstico: " + Datos.ultimoError);
+        }
+    }
+
+    /**
+     * Android puede demorar o saltear una alarma (ahorro de batería, modo Doze). Esta revisión corre cada
+     * 30 minutos: si el resumen de hoy ya debió salir (hasta 4 horas antes) y no salió, se envía ahora.
+     * No se envía si el usuario cambió el horario después de que ese horario ya había pasado.
+     */
+    private static void ponerAlDia(Context c, Ajustes a) {
+        long ahora = System.currentTimeMillis();
+        String hoy = fechaHoy(ahora);
+        long cambio = Prefs.ajustesMomento(c);
+        TimeZone zona = TimeZone.getDefault();
+        if (a.diarioOn && !hoy.equals(Prefs.envio(c, "diario"))) {
+            long prog = Tiempo.hoyA(ahora, a.diarioH, a.diarioM, zona);
+            if (ahora >= prog && ahora - prog <= 4 * HORA_MS && prog >= cambio) diario(c, false);
+        }
+        if (a.semanalOn && !hoy.equals(Prefs.envio(c, "semanal"))
+                && Calendar.getInstance(zona).get(Calendar.DAY_OF_WEEK) == a.semanalDia) {
+            long prog = Tiempo.hoyA(ahora, a.semanalH, a.semanalM, zona);
+            if (ahora >= prog && ahora - prog <= 4 * HORA_MS && prog >= cambio) semanal(c, false);
         }
     }
 
@@ -69,6 +113,11 @@ final class Trabajos {
         if (a == null || u == null) return;
         // El widget se mantiene al día en cada revisión periódica (si hay uno en la pantalla de inicio)
         WidgetProvider.refrescarTodosYa(c, true);
+        try {
+            ponerAlDia(c, a);
+        } catch (Throwable t) {
+            Log.w(ETQ, "Resúmenes atrasados: " + t);
+        }
         if (a.alertasClima) {
             try {
                 alertasClima(c, u);

@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
 import android.provider.Settings;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -32,15 +33,69 @@ public class EstacionNativoPlugin extends Plugin {
         Context c = getContext();
         JSObject ajustes = call.getObject("ajustes");
         JSObject ubic = call.getObject("ubicacion");
+        JSObject clima = call.getObject("clima");
         if (ajustes != null) Prefs.guardarAjustes(c, ajustes.toString());
+        boolean climaNuevo = false;
         if (ubic != null && ubic.has("lat") && ubic.has("lon")) {
             Prefs.guardarUbicacion(c, ubic.optDouble("lat"), ubic.optDouble("lon"), ubic.optString("nombre", "Mi ubicación"));
+            // El pronóstico que la app ya bajó se comparte: el widget y los avisos lo tienen al instante
+            if (clima != null && clima.has("daily") && clima.has("current")) {
+                Prefs.guardarClima(c, clima.toString(), ubic.optDouble("lat"), ubic.optDouble("lon"));
+                climaNuevo = true;
+            }
         }
         Programador.reprogramar(c);
-        WidgetProvider.refrescarTodos(c, true);
+        WidgetProvider.refrescarTodos(c, !climaNuevo);
         JSObject r = new JSObject();
         r.put("notificaciones", Notificador.permitido(c));
         call.resolve(r);
+    }
+
+    /** Datos para saber por qué no llegan avisos o el widget no muestra información. */
+    @PluginMethod
+    public void diagnostico(PluginCall call) {
+        Context c = getContext();
+        JSObject r = new JSObject();
+        r.put("notificaciones", Notificador.permitido(c));
+        r.put("canalesBloqueados", Notificador.canalesBloqueados(c));
+        r.put("android", Build.VERSION.SDK_INT);
+        Prefs.Ubic u = Prefs.ubicacion(c);
+        r.put("ubicacion", u == null ? "" : u.nombre);
+        r.put("climaMs", Prefs.climaMomento(c));
+        int widgets = 0;
+        try {
+            int[] ids = AppWidgetManager.getInstance(c).getAppWidgetIds(new ComponentName(c, WidgetProvider.class));
+            widgets = ids == null ? 0 : ids.length;
+        } catch (RuntimeException e) {
+            widgets = -1;
+        }
+        r.put("widgets", widgets);
+        r.put("widgetEstado", Prefs.estadoWidget(c));
+        boolean sinAhorro = true;
+        if (Build.VERSION.SDK_INT >= 23) {
+            PowerManager pm = (PowerManager) c.getSystemService(Context.POWER_SERVICE);
+            sinAhorro = pm != null && pm.isIgnoringBatteryOptimizations(c.getPackageName());
+        }
+        r.put("sinAhorroBateria", sinAhorro);
+        r.put("ultimoDiario", Prefs.envio(c, "diario"));
+        r.put("ultimoSemanal", Prefs.envio(c, "semanal"));
+        call.resolve(r);
+    }
+
+    /** Abre la pantalla de Android donde se saca a la app del ahorro de batería. */
+    @PluginMethod
+    public void abrirAjustesBateria(PluginCall call) {
+        Context c = getContext();
+        try {
+            Intent i = Build.VERSION.SDK_INT >= 23
+                    ? new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    : new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + c.getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            c.startActivity(i);
+            call.resolve();
+        } catch (RuntimeException e) {
+            call.reject("No se pudo abrir: " + e.getMessage());
+        }
     }
 
     @PluginMethod

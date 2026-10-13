@@ -30,6 +30,17 @@ final class Tiempo {
         return ahora + 24L * 3600 * 1000;
     }
 
+    /** Hoy a las hh:mm (puede ser un momento ya pasado). */
+    static long hoyA(long ahora, int hh, int mm, TimeZone zona) {
+        Calendar c = Calendar.getInstance(zona);
+        c.setTimeInMillis(ahora);
+        c.set(Calendar.HOUR_OF_DAY, hh);
+        c.set(Calendar.MINUTE, mm);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
+    }
+
     /** Pasa "07:30" a {7, 30}. Si el texto no sirve devuelve los valores por defecto. */
     static int[] hora(String texto, int hhDef, int mmDef) {
         try {
