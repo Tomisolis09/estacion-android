@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_descripcion">Temperatura actual, ubicación y pronóstico de los próximos 3 días</string>
+</resources>

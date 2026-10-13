@@ -1,0 +1,170 @@
+package __PKG__;
+
+import android.appwidget.AppWidgetManager;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
+import java.io.File;
+
+/** Puente entre la app web y las funciones nativas (widget, alarmas, notificaciones, alertas). */
+@CapacitorPlugin(
+        name = "EstacionNativo",
+        permissions = {
+                @Permission(alias = "notificaciones", strings = {"android.permission.POST_NOTIFICATIONS"})
+        })
+public class EstacionNativoPlugin extends Plugin {
+
+    /** Guarda ajustes y ubicación, reprograma las alarmas y actualiza el widget. */
+    @PluginMethod
+    public void sincronizar(PluginCall call) {
+        Context c = getContext();
+        JSObject ajustes = call.getObject("ajustes");
+        JSObject ubic = call.getObject("ubicacion");
+        if (ajustes != null) Prefs.guardarAjustes(c, ajustes.toString());
+        if (ubic != null && ubic.has("lat") && ubic.has("lon")) {
+            Prefs.guardarUbicacion(c, ubic.optDouble("lat"), ubic.optDouble("lon"), ubic.optString("nombre", "Mi ubicación"));
+        }
+        Programador.reprogramar(c);
+        WidgetProvider.refrescarTodos(c, true);
+        JSObject r = new JSObject();
+        r.put("notificaciones", Notificador.permitido(c));
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void estado(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("notificaciones", Notificador.permitido(getContext()));
+        r.put("android", Build.VERSION.SDK_INT);
+        call.resolve(r);
+    }
+
+    /** True si es la versión de prueba (APK debug): ahí los anuncios son siempre de prueba. */
+    @PluginMethod
+    public void esDepuracion(PluginCall call) {
+        boolean dbg = (getContext().getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        JSObject r = new JSObject();
+        r.put("depuracion", dbg);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void pedirPermisoNotificaciones(PluginCall call) {
+        if (Build.VERSION.SDK_INT < 33 || getPermissionState("notificaciones") == PermissionState.GRANTED) {
+            responderPermiso(call);
+            return;
+        }
+        requestPermissionForAlias("notificaciones", call, "tras");
+    }
+
+    @PermissionCallback
+    private void tras(PluginCall call) {
+        responderPermiso(call);
+    }
+
+    private void responderPermiso(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("concedido", Notificador.permitido(getContext()));
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void abrirAjustesNotificaciones(PluginCall call) {
+        Context c = getContext();
+        Intent i;
+        if (Build.VERSION.SDK_INT >= 26) {
+            i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+            i.putExtra(Settings.EXTRA_APP_PACKAGE, c.getPackageName());
+        } else {
+            i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            i.setData(Uri.parse("package:" + c.getPackageName()));
+        }
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        c.startActivity(i);
+        call.resolve();
+    }
+
+    /** Envía una notificación de prueba: diario, semanal, sismo o alerta. */
+    @PluginMethod
+    public void probar(PluginCall call) {
+        Trabajos.prueba(getContext(), call.getString("tipo", "diario"));
+        call.resolve();
+    }
+
+    /** Alertas oficiales del SMN que afectan a la ubicación indicada. */
+    @PluginMethod
+    public void alertasSmn(PluginCall call) {
+        try {
+            double lat = call.getDouble("lat", 0.0);
+            double lon = call.getDouble("lon", 0.0);
+            long ahora = System.currentTimeMillis();
+            Smn.Resultado r = Smn.consultar(new File(getContext().getCacheDir(), "smn"), lat, lon, ahora, 7000, Http.RED);
+            call.resolve(new JSObject(Smn.aJson(r, ahora)));
+        } catch (Exception e) {
+            call.reject("No se pudieron consultar las alertas: " + e.getMessage());
+        }
+    }
+
+    /** Sismos recientes (USGS). Se piden desde Java para no depender de CORS en el WebView. */
+    @PluginMethod
+    public void sismos(PluginCall call) {
+        try {
+            double lat = call.getDouble("lat", 0.0);
+            double lon = call.getDouble("lon", 0.0);
+            double minMag = call.getDouble("minMag", Sismos.MAG_MINIMA);
+            int dias = call.getInt("dias", 3);
+            long desde = System.currentTimeMillis() - dias * 24L * 3600L * 1000L;
+            String json = Http.get(Sismos.url(lat, lon, minMag, desde), 9000);
+            JSObject r = new JSObject();
+            r.put("json", json);
+            call.resolve(r);
+        } catch (Exception e) {
+            call.reject("No se pudieron consultar los sismos: " + e.getMessage());
+        }
+    }
+
+    /** Pide a Android que agregue el widget a la pantalla de inicio (Android 8 o más). */
+    @PluginMethod
+    public void fijarWidget(PluginCall call) {
+        boolean pedido = false;
+        try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                AppWidgetManager m = AppWidgetManager.getInstance(getContext());
+                if (m != null && m.isRequestPinAppWidgetSupported()) {
+                    pedido = m.requestPinAppWidget(new ComponentName(getContext(), WidgetProvider.class), null, null);
+                }
+            }
+        } catch (RuntimeException e) {
+            pedido = false;
+        }
+        JSObject r = new JSObject();
+        r.put("solicitado", pedido);
+        call.resolve(r);
+    }
+
+    /** Abre un enlace https en el navegador del teléfono. */
+    @PluginMethod
+    public void abrirUrl(PluginCall call) {
+        String url = call.getString("url", "");
+        if (url == null || !url.startsWith("https://")) {
+            call.reject("Dirección no válida");
+            return;
+        }
+        Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(i);
+        call.resolve();
+    }
+}

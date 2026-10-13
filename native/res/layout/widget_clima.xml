@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="10dp"
+    android:background="@drawable/widget_fondo_dia">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/w_icono"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:text="🌤️"
+            android:textSize="30sp" />
+
+        <TextView
+            android:id="@+id/w_temp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_marginLeft="6dp"
+            android:includeFontPadding="false"
+            android:text="--°"
+            android:textColor="#FFFFFF"
+            android:textSize="34sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="10dp"
+            android:layout_marginLeft="10dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/w_nombre"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="Estación Meteorológica"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/w_desc"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="Cargando…"
+                android:textColor="#F1F5F9"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/w_minmax"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="#E2E8F0"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/w_refrescar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:includeFontPadding="false"
+                android:padding="4dp"
+                android:text="↻"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp" />
+
+            <TextView
+                android:id="@+id/w_hora"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:includeFontPadding="false"
+                android:textColor="#CBD5E1"
+                android:textSize="9sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+            <TextView android:id="@+id/d1_nombre" android:layout_width="wrap_content" android:layout_height="wrap_content" android:includeFontPadding="false" android:textColor="#E2E8F0" android:textSize="11sp" />
+            <TextView android:id="@+id/d1_icono" android:layout_width="wrap_content" android:layout_height="wrap_content" android:includeFontPadding="false" android:textSize="15sp" />
+            <TextView android:id="@+id/d1_temp" android:layout_width="wrap_content" android:layout_height="wrap_content" android:includeFontPadding="false" android:textColor="#FFFFFF" android:textSize="11sp" android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+            <TextView android:id="@+id/d2_nombre" android:layout_width="wrap_content" android:layout_height="wrap_content" android:includeFontPadding="false" android:textColor="#E2E8F0" android:textSize="11sp" />
+            <TextView android:id="@+id/d2_icono" android:layout_width="wrap_content" android:layout_height="wrap_content" android:includeFontPadding="false" android:textSize="15sp" />
+            <TextView android:id="@+id/d2_temp" android:layout_width="wrap_content" android:layout_height="wrap_content" android:includeFontPadding="false" android:textColor="#FFFFFF" android:textSize="11sp" android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+            <TextView android:id="@+id/d3_nombre" android:layout_width="wrap_content" android:layout_height="wrap_content" android:includeFontPadding="false" android:textColor="#E2E8F0" android:textSize="11sp" />
+            <TextView android:id="@+id/d3_icono" android:layout_width="wrap_content" android:layout_height="wrap_content" android:includeFontPadding="false" android:textSize="15sp" />
+            <TextView android:id="@+id/d3_temp" android:layout_width="wrap_content" android:layout_height="wrap_content" android:includeFontPadding="false" android:textColor="#FFFFFF" android:textSize="11sp" android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>
