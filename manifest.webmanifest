@@ -1,7 +1,7 @@
 {
   "name": "Estación Meteorológica",
   "short_name": "Estación",
-  "description": "Clima de Argentina: pronóstico, lluvia, viento, UV, radar y alertas.",
+  "description": "Clima de Argentina: pronóstico, alertas oficiales, sismos y actividades al aire libre.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
