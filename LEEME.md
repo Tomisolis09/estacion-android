@@ -48,6 +48,23 @@ Antes de publicar actualizá en Play Console:
 4. Descripción: agregá "No es una app oficial. Alertas del Servicio Meteorológico Nacional (CC BY 4.0) y sismos del USGS".
 5. Subí capturas nuevas (Hoy, Actividades, Avisos, Widget).
 
+## E. Novedades de esta versión (arreglos + anuncios)
+**Widget**
+- La app ahora le pasa al widget el pronóstico que ya descargó: aparece al instante, sin depender de que el widget tenga internet.
+- El widget se dibuja primero con lo último guardado y después intenta actualizar (con tiempo límite corto para que Android no lo corte).
+
+**Notificaciones**
+- Si Android demora o saltea una alarma, la revisión de cada 30 minutos envía el resumen del día que quedó atrasado (hasta 4 h después del horario).
+- En ⚙️ Ajustes > Probar notificaciones, si algo falla ahora llega una notificación de prueba que explica el motivo, y la pantalla muestra el resultado.
+- **⚙️ Ajustes > 🔍 Diagnóstico**: muestra permiso de notificaciones, canales silenciados, ubicación guardada, último pronóstico, estado del widget y ahorro de batería. Si algo sigue fallando, copiame ese texto.
+
+**Anuncios (ciclo)**
+- **Banner:** 1 minuto visible, 3 minutos sin anuncios, y vuelve (se repite). Los tiempos están en `www/anuncios.js` (`VISIBLE_MS` y `OCULTO_MS`).
+- **Pantalla completa / video:** un anuncio como máximo por cada ventana de 1 minuto, cuando la persona cambia de solapa o cierra una hoja. AdMob decide si muestra imagen o video. No se muestra si hay una alerta naranja/roja, sismo fuerte o tsunami.
+- **Video con premio (opcional):** botón en Ajustes; quien lo mira no ve anuncios por 30 minutos.
+- Un anuncio de pantalla completa **no se puede cortar a 1 minuto desde la app**: lo cierra el usuario cuando AdMob lo permite. Por política de AdMob tampoco se pueden forzar anuncios de pantalla completa o video en cualquier momento (ni sobre una alerta).
+- **Para activarlos en la versión de Play Store** creá en AdMob una unidad *Intersticial* y una *Con premio*, y pegá sus IDs en `INTERSTICIAL_ID_REAL` y `PREMIO_ID_REAL` (`www/anuncios.js`). Mientras estén vacíos, en la versión publicada solo sale el banner. En el APK de prueba se ven siempre con anuncios de prueba.
+
 ## Anuncios (AdMob)
 Tus IDs reales ya están cargados (`scripts/preparar-android.sh` y `www/anuncios.js`). Nunca toques los anuncios reales
 desde tu propio celular: podés suspender tu cuenta de AdMob.
