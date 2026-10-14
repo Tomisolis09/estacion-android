@@ -4,13 +4,13 @@
   "private": true,
   "description": "Estación Meteorológica para Android (Capacitor)",
   "dependencies": {
-    "@capacitor/android": "latest",
-    "@capacitor/cli": "latest",
-    "@capacitor/core": "latest",
-    "@capacitor-community/admob": "latest",
-    "@capacitor/geolocation": "latest"
+    "@capacitor/android": "8.5.3",
+    "@capacitor/cli": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor-community/admob": "8.2.1",
+    "@capacitor/geolocation": "8.2.3"
   },
   "devDependencies": {
-    "@capacitor/assets": "latest"
+    "@capacitor/assets": "3.0.5"
   }
 }

@@ -1,4 +1,4 @@
-# Estación Meteorológica v2 – Android
+# Estación Meteorológica v3.8 – Android
 
 Novedades: widget (temperatura, ubicación y próximos 3 días), notificaciones diarias y semanales configurables,
 ubicación por GPS, solapa Actividades, alertas oficiales del SMN, sismos y posible tsunami (solo cerca de la costa),
@@ -64,6 +64,38 @@ Antes de publicar actualizá en Play Console:
 - **Video con premio (opcional):** botón en Ajustes; quien lo mira no ve anuncios por 30 minutos.
 - Un anuncio de pantalla completa **no se puede cortar a 1 minuto desde la app**: lo cierra el usuario cuando AdMob lo permite. Por política de AdMob tampoco se pueden forzar anuncios de pantalla completa o video en cualquier momento (ni sobre una alerta).
 - **Para activarlos en la versión de Play Store** creá en AdMob una unidad *Intersticial* y una *Con premio*, y pegá sus IDs en `INTERSTICIAL_ID_REAL` y `PREMIO_ID_REAL` (`www/anuncios.js`). Mientras estén vacíos, en la versión publicada solo sale el banner. En el APK de prueba se ven siempre con anuncios de prueba.
+
+**Actividades personalizadas**
+- Al instalar, la bienvenida pregunta qué deportes o actividades hace la persona (21 opciones) y permite **agregar otras a su manera** (nombre, emoji y "se parece a…", que define cómo se calcula el mejor horario). La solapa Actividades muestra solo las suyas. Se cambian cuando quiera desde ✏️ Personalizar o ⚙️ Ajustes > Mis deportes y actividades. Si no elige ninguna, se muestran todas.
+- Nuevas: caminata, tenis y pádel, yoga/gimnasia, escalada, golf, skate y patín, moto, equitación.
+
+**Sol y Luna** (solapas Hoy y Actividades, para el día elegido)
+- Salida y puesta del Sol y de la Luna, horas de luz, fase lunar con % iluminado y las próximas fases (nueva, cuarto creciente, llena, cuarto menguante). Se calcula en el teléfono, sin internet. Precisión: sol ±2 min, fases ±1 hora. El dibujo de la Luna está espejado para el hemisferio sur.
+
+**Alertas de tormentas y crecida de ríos**
+- Las alertas oficiales del SMN (amarilla, naranja y roja) para tu ubicación ya generan notificación (⚙️ Ajustes > Alertas meteorológicas). Se revisan cada 30 minutos con la app cerrada. Probalo con el botón "Alerta del SMN".
+- **Crecida de ríos e inundaciones (nuevo):** si hay un río importante a menos de unos 5 km, la app compara el caudal que prevé el modelo GloFAS (vía Open-Meteo) con las crecidas históricas de ese lugar (1990-2022): cada ~2 años = amarilla, cada ~5 = naranja, cada ~20 = roja. Avisa por notificación (máximo una por nivel cada 4 días) y lo muestra en la solapa Avisos. Si no hay un río grande cerca, no avisa. Es una estimación: no reemplaza al INA ni a Defensa Civil. Botón de prueba: "Aviso de crecida".
+- Las alertas meteorológicas (tormentas, lluvias, viento, calor, frío, etc.) son **solo las oficiales del SMN**: ya no se muestran alertas "estimadas" con el pronóstico. El banner de Hoy, el punto de la solapa Avisos y el aviso del día en Actividades usan únicamente alertas del SMN (más sismos y la crecida de ríos, que se muestra aparte y marcada como estimación).
+
+## Si no llega el aviso de crecida
+1. Al pie de cada pantalla figura la versión (por ejemplo v3.8): confirmá que tenés instalada la última.
+2. ⚙️ Ajustes > Probar notificaciones > **Aviso de crecida** (ejemplo) y **Revisar río ahora** (consulta real; te manda una notificación con el resultado, aunque no haya crecida).
+3. ⚙️ Ajustes > 🔍 Diagnóstico: mirá "Umbrales de crecida" y "Última revisión de ríos".
+Solo hay aviso real si hay un río importante a ~5 km y el modelo prevé un caudal sobre la crecida frecuente (cada ~2 años). Los umbrales se calculan al abrir la solapa Avisos con internet.
+
+## Solapa Planetas (nueva)
+Muestra Venus, Júpiter, Marte, Saturno y Mercurio: si se ven esta noche desde tu ubicación (horario, dirección, altura y brillo) y una tira con los próximos 14 días (punto verde = se ve). Tocá un día para ver el detalle de ese día. Se calcula en el teléfono, sin internet (`www/planetas.js`). Cuenta como "visible" si el planeta está a más de 5° sobre el horizonte con el cielo oscuro (Sol a más de 4° bajo el horizonte). No tiene en cuenta nubes ni luces de la ciudad.
+
+## Pendientes antes de publicar (los tenés que hacer vos)
+1. Contratar el plan comercial de Open-Meteo y pegar la clave en `OPEN_METEO_CLAVE` (`www/nucleo.js`).
+2. Publicar `PRIVACIDAD.md` en una URL pública (por ejemplo GitHub Pages), pegarla en `POLITICA_URL` (`www/nucleo.js`) y en Play Console.
+3. En Play Console: Seguridad de los datos, ID de publicidad, público objetivo (13+) y ficha con atribuciones.
+
+## Licencia de Open-Meteo (importante porque la app tiene anuncios)
+- El servicio **gratuito** de Open-Meteo es solo para uso **no comercial**. Una app con anuncios cuenta como comercial, así que antes de publicar en Play Store contratá un plan en open-meteo.com/en/pricing (hay planes comerciales mensuales).
+- Al contratar te dan una **clave**. Pegala en `www/nucleo.js`, en `OPEN_METEO_CLAVE = ""`. Con eso la app usa sola el servidor de clientes (`customer-api.open-meteo.com`) para el pronóstico, la búsqueda de lugares, el widget, los avisos y los ríos. Sin clave, sigue con el servicio gratuito.
+- La clave queda dentro de la app (cualquiera que la desarme podría verla). Si algún día querés protegerla, se puede poner un servidor intermedio.
+- Open-Meteo pide **atribución** (CC BY 4.0): ya figura en ⚙️ Ajustes. Mencionalo también en la ficha de Play Store.
 
 ## Anuncios (AdMob)
 Tus IDs reales ya están cargados (`scripts/preparar-android.sh` y `www/anuncios.js`). Nunca toques los anuncios reales
