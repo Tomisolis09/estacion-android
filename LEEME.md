@@ -1,4 +1,4 @@
-# Estación Meteorológica v3.9 – Android
+# Estación Meteorológica v4.1 – Android
 
 Novedades: widget (temperatura, ubicación y próximos 3 días), notificaciones diarias y semanales configurables,
 ubicación por GPS, solapa Actividades, alertas oficiales del SMN, sismos y posible tsunami (solo cerca de la costa),
@@ -105,6 +105,12 @@ En esta versión **no hay anuncios**: no se incluye AdMob en la app, no se pide 
 5. Contratá un plan de Open-Meteo y pegá la clave en `OPEN_METEO_CLAVE`.
 6. Play Console: contiene anuncios = Sí, declarar el ID de publicidad en Seguridad de los datos.
 Nunca toques los anuncios reales desde tu propio celular: podés suspender tu cuenta de AdMob.
+
+## Opiniones y errores
+- **⚙️ Ajustes > Opiniones y errores:** ⭐ calificar en Play Store, 🐞 reportar un error y 💡 enviar una sugerencia. Los dos últimos abren la app de correo del teléfono con el mensaje armado (versión de la app, modelo del teléfono y pantalla; sin ubicación) hacia el correo de `CONTACTO_EMAIL` (`www/nucleo.js`). La persona revisa y envía.
+- **Tarjeta en "Hoy":** aparece **cada 5 veces que se abre la app**: 👍 la lleva a calificar en Play Store, 😕 a escribirte por correo, "Ahora no" (o ignorarla) la vuelve a mostrar 5 aperturas después y "No preguntar más" la saca para siempre. Quien ya calificó o escribió no la vuelve a ver. En **⚙️ Ajustes > Opiniones y errores** hay un interruptor "Recordarme dar mi opinión" para apagarla o prenderla de nuevo (al prenderla, vuelve a aparecer 5 aperturas después).
+- Las reseñas de Play Store las ves y respondés desde Play Console > *Calificaciones y reseñas*; los errores (cierres inesperados) en *Calidad > Android vitals*.
+- Cuando cambies de correo, editá `CONTACTO_EMAIL` en `www/nucleo.js` y el contacto de `PRIVACIDAD.md`.
 
 ## Menos llamadas (caché)
 - **Pronóstico:** si el guardado es del mismo lugar y tiene menos de 30 minutos, al abrir la app o volver a ella no se vuelve a bajar. El botón de actualizar (arriba) fuerza una descarga, con un mínimo de 2 minutos entre una y otra.

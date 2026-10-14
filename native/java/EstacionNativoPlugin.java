@@ -222,17 +222,23 @@ public class EstacionNativoPlugin extends Plugin {
         call.resolve(r);
     }
 
-    /** Abre un enlace https en el navegador del teléfono. */
+    /** Abre un enlace https en el navegador del teléfono, o un mailto: en la app de correo. */
     @PluginMethod
     public void abrirUrl(PluginCall call) {
         String url = call.getString("url", "");
-        if (url == null || !url.startsWith("https://")) {
+        boolean https = url != null && url.startsWith("https://");
+        boolean correo = url != null && url.startsWith("mailto:");
+        if (!https && !correo) {
             call.reject("Dirección no válida");
             return;
         }
-        Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        getContext().startActivity(i);
-        call.resolve();
+        try {
+            Intent i = new Intent(correo ? Intent.ACTION_SENDTO : Intent.ACTION_VIEW, Uri.parse(url));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+            call.resolve();
+        } catch (RuntimeException e) {
+            call.reject("No hay una app para abrir esto");
+        }
     }
 }

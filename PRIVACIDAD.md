@@ -17,6 +17,9 @@ Estación Meteorológica muestra el pronóstico del tiempo, alertas meteorológi
 
 No se envía tu nombre, correo ni ningún dato que te identifique a los servicios de clima, sismos y nombres de lugar.
 
+**Comentarios y reportes de errores**
+Si elegís escribirnos desde la app (Ajustes > Opiniones y errores), se abre tu aplicación de correo con un mensaje armado que incluye la versión de la app y el modelo de tu teléfono; podés borrar esos datos antes de enviarlo. No incluimos tu ubicación. Si lo enviás, recibimos tu dirección de correo y lo que nos cuentes, y lo usamos solo para responderte y corregir la app.
+
 **Aviso importante**
 Esta app **no es un servicio oficial ni del gobierno**. La información es orientativa y puede tener demoras o errores. En una emergencia seguí las indicaciones de Defensa Civil y llamá al 911.
 

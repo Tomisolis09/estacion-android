@@ -372,6 +372,12 @@ function abrirAjustes() {
     <button class="btn sec" id="btnDiag">🔍 Diagnóstico de avisos y widget</button>
     <div class="nota" id="diagNota" style="white-space:pre-line"></div>
     <div id="bloqueVideo"></div>
+    <div class="sec-tit">Opiniones y errores</div>
+    <div class="bloque"><div class="fila-aj"><div class="tx"><b>Recordarme dar mi opinión</b><small>Una tarjeta en Hoy, cada 5 veces que abrís la app</small></div>${interruptor("aj-opinion", !(leer("opinion") || {}).cerrada)}</div></div>
+    <button class="btn sec" data-op="calificar">⭐ Calificar la app en Play Store</button>
+    <button class="btn sec" data-op="error">🐞 Reportar un error</button>
+    <button class="btn sec" data-op="sugerencia">💡 Enviar una sugerencia</button>
+    <div class="nota">Se abre tu app de correo con el mensaje armado: lo revisás y lo enviás vos. No incluimos tu ubicación.</div>
     <div class="sec-tit">Apariencia</div>
     <div class="seg" id="segTema"><button data-tema="auto" aria-pressed="${tema === "auto"}">Automático</button><button data-tema="claro" aria-pressed="${tema === "claro"}">Claro</button><button data-tema="oscuro" aria-pressed="${tema === "oscuro"}">Oscuro</button></div>
     <p class="nota">Datos: pronóstico y ríos de Open-Meteo.com (licencia CC BY 4.0; ríos: modelo GloFAS de Copernicus/ECMWF), Servicio Meteorológico Nacional (alertas oficiales, CC BY 4.0), USGS (sismos) y BigDataCloud (nombre del lugar). Esta app no es un servicio oficial ni del gobierno; la información es orientativa. En una emergencia llamá al 911.
@@ -402,6 +408,10 @@ function abrirAjustes() {
       await NATIVO.probar({ tipo: b.dataset.prueba });
       nota.textContent = "Notificación enviada. Si no la ves, tocá “Diagnóstico”.";
     } catch (e) { nota.textContent = "No se pudo enviar: " + ((e && e.message) || e); }
+  });
+  h.querySelectorAll("[data-op]").forEach(b => b.onclick = () => accionOpinion(b.dataset.op));
+  h.querySelector("#aj-opinion").addEventListener("change", e => {
+    const o = leer("opinion") || {}; o.cerrada = !e.target.checked; o.pendiente = false; o.base = o.abiertas || 0; guardar("opinion", o); render();
   });
   h.querySelector("#btnDiag").onclick = async () => {
     const nota = h.querySelector("#diagNota");
@@ -510,6 +520,7 @@ function vistaHoy(d) {
     <div class="rota" id="rota" aria-live="polite">${esc(estado.lineas[estado.rot % estado.lineas.length] || "")}</div>
   </section>
   ${bannerAvisos()}
+  ${tarjetaOpinion()}
   <section class="card"><h2>Próximas horas</h2><div class="tira">${horas}</div></section>
   <section class="card"><h2>Próximos 3 días</h2><div class="tira" style="gap:8px">${prox}</div></section>
   ${tarjetaAstros(d, 0, false)}
@@ -881,6 +892,7 @@ $("#vista").addEventListener("click", e => {
   if (e.target.closest("[data-editar-act]")) { abrirActividades(); return; }
   const m = e.target.closest("[data-metrica]"); if (m) { estado.metrica = m.dataset.metrica; render(); return; }
   const ir = e.target.closest("[data-tab-ir]"); if (ir) { estado.tab = ir.dataset.tabIr; guardar("tab", estado.tab); render(); $("#vista").scrollTop = 0; cargarAvisos(); return; }
+  const op = e.target.closest("[data-op]"); if (op) { accionOpinion(op.dataset.op); return; }
   const ur = e.target.closest("[data-url]"); if (ur) { abrirEnlace(ur.dataset.url); return; }
   const aa = e.target.closest("[data-av]"); if (aa) { estado.avAbierto = estado.avAbierto === aa.dataset.av ? null : aa.dataset.av; render(); return; }
   const pd = e.target.closest("[data-pldia]"); if (pd) { estado.planDia = +pd.dataset.pldia; render(); return; }
@@ -892,8 +904,51 @@ $("#btnRefrescar").onclick = () => { if (estado.ubic && estado.ubic.gps) seguirG
 $("#btnAjustes").onclick = () => abrirAjustes();
 
 function abrirEnlace(url) {
-  if (!/^https:\/\//.test(url)) return;
-  if (NATIVO) NATIVO.abrirUrl({ url }).catch(() => {}); else window.open(url, "_blank", "noopener");
+  if (!/^(https:\/\/|mailto:)/.test(url)) return;
+  const sinCorreo = () => { if (/^mailto:/.test(url)) alert("No se encontró una app de correo. Escribinos a " + CONTACTO_EMAIL); };
+  if (NATIVO) NATIVO.abrirUrl({ url }).catch(sinCorreo); else window.open(url, "_blank", "noopener");
+}
+
+// ============================================================
+// OPINIONES Y ERRORES: calificar en Play Store, avisar de un problema o mandar una sugerencia (por correo)
+// ============================================================
+const PLAY_URL = `https://play.google.com/store/apps/details?id=${PLAY_ID}`;
+// Cada 5 aperturas aparece la tarjeta en "Hoy". Si la ignora, se vuelve a preguntar 5 aperturas después.
+(function contarAperturas() {
+  const o = leer("opinion") || {};
+  o.abiertas = (o.abiertas || 0) + 1;
+  if (o.pendiente) { o.pendiente = false; o.base = o.abiertas; }            // no contestó: se pospone
+  else if (!o.cerrada && o.abiertas - (o.base || 0) >= 5) o.pendiente = true; // toca preguntar en esta apertura
+  guardar("opinion", o);
+})();
+function escribirComentario(tipo) {
+  const ua = (navigator.userAgent.match(/Android [^;)]+; [^;)]+/) || [navigator.userAgent.slice(0, 80)])[0];
+  const asunto = `${tipo === "error" ? "Error" : "Sugerencia"} - Estación Meteorológica v${APP_VERSION}`;
+  const cuerpo = `${tipo === "error" ? "Contanos qué pasó y qué estabas haciendo (si podés, adjuntá una captura):" : "Contanos tu idea o comentario:"}\n\n\n\n` +
+    `--- Datos técnicos (podés borrarlos) ---\nApp: v${APP_VERSION}\nTeléfono: ${ua}\nPantalla: ${estado.tab}\n` +
+    `${estado.error ? "Aviso en pantalla: " + estado.error + "\n" : ""}(No incluimos tu ubicación.)`;
+  abrirEnlace(`mailto:${CONTACTO_EMAIL}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`);
+}
+function accionOpinion(op) {
+  const o = leer("opinion") || {};
+  if (op === "calificar") { abrirEnlace(PLAY_URL); o.cerrada = true; }
+  else if (op === "error" || op === "sugerencia") { escribirComentario(op); o.cerrada = true; }
+  else if (op === "nunca") o.cerrada = true;
+  // "Ahora no" (y cualquier respuesta): la próxima pregunta, si corresponde, es 5 aperturas después
+  o.pendiente = false; o.base = o.abiertas || 0;
+  guardar("opinion", o); render();
+}
+// Tarjeta en "Hoy": aparece cada 5 aperturas (si no se cerró para siempre); se puede apagar o volver a prender en Ajustes
+function tarjetaOpinion() {
+  const o = leer("opinion") || {};
+  if (o.cerrada || !o.pendiente) return "";
+  return `<section class="card"><h2>¿Cómo te va con la app?</h2>
+    <p class="sutil" style="margin:0 0 10px">Tu opinión nos ayuda a mejorarla.</p>
+    <div style="display:grid;gap:8px">
+      <button class="btn" data-op="calificar">👍 Me gusta: calificarla en Play Store</button>
+      <button class="btn sec" data-op="error">😕 Tengo un problema o una sugerencia</button>
+      <div style="display:flex;gap:8px"><button class="btn sec chico" data-op="luego" style="flex:1">Ahora no</button><button class="btn sec chico" data-op="nunca" style="flex:1">No preguntar más</button></div>
+    </div></section>`;
 }
 function aplicarTema(t) {
   if (t === "claro" || t === "oscuro") document.documentElement.dataset.tema = t; else delete document.documentElement.dataset.tema;

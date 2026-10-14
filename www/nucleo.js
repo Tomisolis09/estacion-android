@@ -11,7 +11,9 @@
 const OPEN_METEO_CLAVE = "";
 // URL pública de tu política de privacidad (la misma que cargás en Play Console). Si está vacía, no se muestra el enlace.
 const POLITICA_URL = "";
-const APP_VERSION = "3.9"; // número que se ve al pie de cada pantalla (sirve para saber qué APK tenés instalado)
+const CONTACTO_EMAIL = "tomisolisrider09@gmail.com"; // correo al que llegan los comentarios y reportes de errores
+const PLAY_ID = "com.tomisolis.estacionmeteorologica"; // mismo appId que capacitor.config.json
+const APP_VERSION = "4.1"; // número que se ve al pie de cada pantalla (sirve para saber qué APK tenés instalado)
 const omServidor = sub => `https://${OPEN_METEO_CLAVE ? "customer-" : ""}${sub}.open-meteo.com`;
 const omClave = OPEN_METEO_CLAVE ? `&apikey=${encodeURIComponent(OPEN_METEO_CLAVE)}` : "";
 const URL_CLIMA = omServidor("api") + "/v1/forecast";
