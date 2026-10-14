@@ -9,6 +9,9 @@
 // (customer-api.open-meteo.com), tanto en el pronóstico como en el widget, los avisos y los ríos.
 // Dejala vacía mientras no tengas plan.
 const OPEN_METEO_CLAVE = "";
+// URL pública de tu política de privacidad (la misma que cargás en Play Console). Si está vacía, no se muestra el enlace.
+const POLITICA_URL = "";
+const APP_VERSION = "3.8"; // número que se ve al pie de cada pantalla (sirve para saber qué APK tenés instalado)
 const omServidor = sub => `https://${OPEN_METEO_CLAVE ? "customer-" : ""}${sub}.open-meteo.com`;
 const omClave = OPEN_METEO_CLAVE ? `&apikey=${encodeURIComponent(OPEN_METEO_CLAVE)}` : "";
 const URL_CLIMA = omServidor("api") + "/v1/forecast";

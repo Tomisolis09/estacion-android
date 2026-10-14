@@ -43,7 +43,7 @@ const estado = {
   ubic: leer("ubicacion"), datos: leer("ultimoClima"), ajustes: cargarAjustes(), tab: leer("tab") || "hoy",
   metrica: "temp", diaAbierto: 0, cargando: false, error: "", rot: 0, lineas: [], ultima: 0,
   gpsEstado: "", // "", "buscando", "sin-permiso"
-  actDia: 1, actAbierta: null, avAbierto: null, avisos: { smn: null, sismos: null, cargando: false, error: "", ultima: 0 },
+  actDia: 1, planDia: 0, actAbierta: null, avAbierto: null, avisos: { smn: null, sismos: null, cargando: false, error: "", ultima: 0 },
   rio: { cargando: false, ts: 0, lat: null, lon: null, eval: null, u: null, error: "" },
 };
 
@@ -316,7 +316,7 @@ function abrirAjustes() {
     <div class="sec-tit">Probar notificaciones</div>
     <div class="bloque" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px">
       <button class="btn sec chico" data-prueba="diario">Resumen diario</button><button class="btn sec chico" data-prueba="semanal">Resumen semanal</button>
-      <button class="btn sec chico" data-prueba="alerta">Alerta del SMN</button><button class="btn sec chico" data-prueba="sismo">Aviso de sismo</button><button class="btn sec chico" data-prueba="inundacion">Aviso de crecida</button></div>
+      <button class="btn sec chico" data-prueba="alerta">Alerta del SMN</button><button class="btn sec chico" data-prueba="sismo">Aviso de sismo</button><button class="btn sec chico" data-prueba="inundacion">Aviso de crecida</button><button class="btn sec chico" data-prueba="rio">Revisar río ahora</button></div>
     <div class="nota" id="pruebaNota">Si la prueba no llega, tocá “Diagnóstico” para ver el motivo.</div>
     <button class="btn sec" id="btnDiag">🔍 Diagnóstico de avisos y widget</button>
     <div class="nota" id="diagNota" style="white-space:pre-line"></div>
@@ -324,7 +324,8 @@ function abrirAjustes() {
     <div class="sec-tit">Apariencia</div>
     <div class="seg" id="segTema"><button data-tema="auto" aria-pressed="${tema === "auto"}">Automático</button><button data-tema="claro" aria-pressed="${tema === "claro"}">Claro</button><button data-tema="oscuro" aria-pressed="${tema === "oscuro"}">Oscuro</button></div>
     <p class="nota">Datos: pronóstico y ríos de Open-Meteo.com (licencia CC BY 4.0; ríos: modelo GloFAS de Copernicus/ECMWF), Servicio Meteorológico Nacional (alertas oficiales, CC BY 4.0), USGS (sismos) y BigDataCloud (nombre del lugar). Esta app no es un servicio oficial ni del gobierno; la información es orientativa. En una emergencia llamá al 911.
-    <br><span class="enlace" role="link" tabindex="0" data-url="https://www.smn.gob.ar/alertas">Alertas oficiales del SMN</span></p>
+    <br><span class="enlace" role="link" tabindex="0" data-url="https://www.smn.gob.ar/alertas">Alertas oficiales del SMN</span>${POLITICA_URL ? `<br><span class="enlace" role="link" tabindex="0" data-url="${POLITICA_URL}">Política de privacidad</span>` : ""}</p>
+    <p class="nota" style="text-align:center">Estación Meteorológica · versión ${APP_VERSION}</p>
     <button class="btn" id="btnCerrarAj">Listo</button>`);
   const h = $("#hoja2in");
   enlazarFormulario(h);
@@ -368,6 +369,8 @@ function abrirAjustes() {
         `${r.widgets > 0 ? "✅" : "ℹ️"} Widgets en la pantalla de inicio: ${r.widgets}`,
         `Widget: ${r.widgetEstado}`,
         `${ok(r.sinAhorroBateria)} Sin ahorro de batería${r.sinAhorroBateria ? "" : " (puede demorar los avisos)"}`,
+        `${ok(r.crecidaGuardada)} Umbrales de crecida del río cercano: ${r.crecidaGuardada ? "guardados" : "no hay (sin río importante a ~5 km, o abrí la solapa Avisos con internet)"}`,
+        `Última revisión de ríos: ${cuando(r.rioMs)}${r.rioEstado ? " · " + r.rioEstado : ""}`,
         `Último resumen diario enviado: ${r.ultimoDiario || "ninguno"} · semanal: ${r.ultimoSemanal || "ninguno"}`,
         `Android ${r.android}`,
       ].join("\n");
@@ -742,7 +745,51 @@ function vistaActividades(d) {
     <p class="pie">Es una estimación con el pronóstico del modelo Open-Meteo. Ante tormentas o alertas oficiales, no salgas.</p>`;
 }
 
-const VISTAS = { hoy: vistaHoy, horas: vistaHoras, dias: vistaDias, radar: vistaRadar, activ: vistaActividades, avisos: vistaAvisos };
+// ============================================================
+// PLANETAS: qué planetas se ven (a simple vista) en tu ubicación, noche por noche
+// ============================================================
+const PLANETAS_DIAS = 14;
+function planetasCalculados(off) {
+  const u = estado.ubic, base = new Date(Date.now() + off * 1000 - 6 * 3600000); // antes de las 6 am todavía es "esta noche"
+  const clave = [u.lat.toFixed(2), u.lon.toFixed(2), off, base.toISOString().slice(0, 10)].join("|");
+  if (estado._pl && estado._pl.clave === clave) return estado._pl;
+  const dias = [];
+  for (let i = 0; i < PLANETAS_DIAS; i++) {
+    const f = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + i));
+    const iso = f.toISOString().slice(0, 10);
+    dias.push({ iso, f, planetas: PLANETAS.noche(iso, u.lat, u.lon, off) });
+  }
+  return (estado._pl = { clave, dias });
+}
+function vistaPlanetas(d) {
+  const off = d.utc_offset_seconds != null ? d.utc_offset_seconds : -new Date().getTimezoneOffset() * 60;
+  let pl;
+  try { pl = planetasCalculados(off); } catch (e) { return `<div class="estado">No se pudieron calcular los planetas.</div>`; }
+  if (estado.planDia >= pl.dias.length) estado.planDia = 0;
+  const sel = pl.dias[estado.planDia], hh = ms => hhmm(ms, off);
+  const nombreFecha = (dia, i) => i === 0 ? "esta noche" : i === 1 ? "mañana a la noche" : `la noche del ${DIAS[dia.f.getUTCDay()].toLowerCase()} ${dia.f.getUTCDate()}/${dia.f.getUTCMonth() + 1}`;
+  const brillo = m => m <= -3 ? "muy brillante" : m <= 0 ? "brillante" : m <= 1.2 ? "se ve bien" : "tenue";
+  const altura = a => a < 20 ? "bajo, cerca del horizonte" : a < 45 ? "a media altura" : "bien alto";
+  const tarjetas = PLANETAS.LISTA.map((p, k) => {
+    const x = sel.planetas[k];
+    let estadoTxt;
+    if (x.visible) {
+      estadoTxt = `<span class="pl-si">✅ Se ve</span> de ${hh(x.desde)} a ${hh(x.hasta)}<br><span class="sutil">Mejor momento: ${hh(x.maxMs)}, hacia el ${PLANETAS.puntos(x.maxAz)}, ${altura(x.maxAlt)} · ${brillo(x.mag)}</span>`;
+    } else {
+      const m = { "cerca-sol": "Muy cerca del Sol: el resplandor no deja verlo", "solo-dia": "Solo está sobre el horizonte de día", "bajo-horizonte": "No sale por encima del horizonte de noche" }[x.motivo];
+      estadoTxt = `<span class="pl-no">No se ve ${nombreFecha(sel, estado.planDia)}</span><br><span class="sutil">${m}</span>`;
+    }
+    const prox = pl.dias.findIndex((z, i) => i > estado.planDia && z.planetas[k].visible);
+    const proxTxt = !x.visible ? `<p class="sutil" style="margin:8px 0 0">${prox >= 0 ? `Próxima vez que se ve: <b>${DIAS[pl.dias[prox].f.getUTCDay()].toLowerCase()} ${pl.dias[prox].f.getUTCDate()}/${pl.dias[prox].f.getUTCMonth() + 1}</b>` : "No se ve en los próximos 14 días"}</p>` : "";
+    const tira = pl.dias.map((z, i) => `<button class="${z.planetas[k].visible ? "v" : ""}" data-pldia="${i}" aria-pressed="${i === estado.planDia}" aria-label="${DIAS[z.f.getUTCDay()]} ${z.f.getUTCDate()}: ${z.planetas[k].visible ? "se ve" : "no se ve"}">${DIAS[z.f.getUTCDay()][0]}<br>${z.f.getUTCDate()}<i></i></button>`).join("");
+    return `<section class="card"><div class="pl-fila"><span class="pl-bola" style="background:radial-gradient(circle at 35% 30%, #fff8, ${p.color} 45%, ${p.color})"></span><div><b>${p.nombre}</b><div class="pl-estado">${estadoTxt}</div></div></div>${proxTxt}<div class="pl-tira" role="group" aria-label="Próximos ${PLANETAS_DIAS} días de ${p.nombre}">${tira}</div></section>`;
+  }).join("");
+  return `<section class="card"><h2>🔭 Planetas <span>· ${esc(estado.ubic.nombre)}</span></h2>
+    <p class="sutil" style="margin:0">Cuándo se ven a simple vista desde tu ubicación, ${nombreFecha(sel, estado.planDia)}. Tocá un día para ver los demás.</p>
+    <p class="pl-leyenda"><i></i> día en que se ve</p></section>${tarjetas}
+    <p class="nota">Se calcula en tu teléfono, sin internet. Un planeta cuenta como visible si está a más de 5° sobre el horizonte con el cielo oscuro; las nubes y las luces de la ciudad pueden impedir verlo. Los horarios pueden diferir unos minutos.</p>`;
+}
+const VISTAS = { hoy: vistaHoy, horas: vistaHoras, dias: vistaDias, radar: vistaRadar, activ: vistaActividades, avisos: vistaAvisos, planetas: vistaPlanetas };
 
 function render() {
   pintarUbic();
@@ -758,7 +805,7 @@ function render() {
   }
   const aviso = estado.error ? `<div class="aviso warn">${esc(estado.error)}</div>` : "";
   const scroll = v.scrollTop;
-  v.innerHTML = aviso + VISTAS[estado.tab](estado.datos) + `<p class="pie">Actualizado ${estado.ultima ? new Date(estado.ultima).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "(datos guardados)"} · v2.0</p>`;
+  v.innerHTML = aviso + VISTAS[estado.tab](estado.datos) + `<p class="pie">Actualizado ${estado.ultima ? new Date(estado.ultima).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "(datos guardados)"} · v${APP_VERSION}</p>`;
   v.scrollTop = scroll;
   pintarPuntoAviso();
   document.title = estado.datos.current ? `${Math.round(estado.datos.current.temperature_2m)}° ${estado.ubic.nombre}` : "Estación Meteorológica";
@@ -780,6 +827,7 @@ $("#vista").addEventListener("click", e => {
   const ir = e.target.closest("[data-tab-ir]"); if (ir) { estado.tab = ir.dataset.tabIr; guardar("tab", estado.tab); render(); $("#vista").scrollTop = 0; cargarAvisos(); return; }
   const ur = e.target.closest("[data-url]"); if (ur) { abrirEnlace(ur.dataset.url); return; }
   const aa = e.target.closest("[data-av]"); if (aa) { estado.avAbierto = estado.avAbierto === aa.dataset.av ? null : aa.dataset.av; render(); return; }
+  const pd = e.target.closest("[data-pldia]"); if (pd) { estado.planDia = +pd.dataset.pldia; render(); return; }
   const ad = e.target.closest("[data-actdia]"); if (ad) { estado.actDia = +ad.dataset.actdia; estado.actAbierta = null; render(); return; }
   const ac = e.target.closest("[data-act]"); if (ac) { estado.actAbierta = estado.actAbierta === ac.dataset.act ? null : ac.dataset.act; render(); return; }
   const d = e.target.closest("[data-dia]"); if (d) { const i = +d.dataset.dia; estado.diaAbierto = estado.diaAbierto === i ? -1 : i; render(); }
