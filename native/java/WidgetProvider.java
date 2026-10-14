@@ -23,6 +23,18 @@ public class WidgetProvider extends AppWidgetProvider {
     }
 
     @Override
+    public void onAppWidgetOptionsChanged(Context context, AppWidgetManager manager, int id, android.os.Bundle opciones) {
+        super.onAppWidgetOptionsChanged(context, manager, id, opciones);
+        actualizar(context.getApplicationContext(), new int[]{id}, false, null);
+    }
+
+    @Override
+    public void onEnabled(Context context) {
+        super.onEnabled(context);
+        actualizar(context.getApplicationContext(), null, true, null);
+    }
+
+    @Override
     public void onReceive(Context context, Intent intent) {
         if (intent != null && ACCION_REFRESCAR.equals(intent.getAction())) {
             actualizar(context.getApplicationContext(), null, true, goAsync());
@@ -85,8 +97,8 @@ public class WidgetProvider extends AppWidgetProvider {
                     Log.w("EstacionClima", "Widget sin datos: " + e.getMessage());
                 }
             }
-            pintar(c, m, ids, u, p);
-            Prefs.guardarEstadoWidget(c, estado + " · " + new SimpleDateFormat("d/M HH:mm", Locale.US).format(new Date()));
+            String entrega = pintar(c, m, ids, u, p);
+            Prefs.guardarEstadoWidget(c, estado + " · " + entrega + " · " + new SimpleDateFormat("d/M HH:mm", Locale.US).format(new Date()));
         } catch (Throwable t) {
             Log.e("EstacionClima", "Widget", t);
             try {
@@ -97,14 +109,20 @@ public class WidgetProvider extends AppWidgetProvider {
         }
     }
 
-    private static void pintar(Context c, AppWidgetManager m, int[] ids, Prefs.Ubic u, Pronostico p) {
+    /** Dibuja los widgets y devuelve cuántos se entregaron bien (y el primer error, si lo hubo). */
+    private static String pintar(Context c, AppWidgetManager m, int[] ids, Prefs.Ubic u, Pronostico p) {
+        int bien = 0;
+        String error = "";
         for (int id : ids) {
             try {
                 m.updateAppWidget(id, construir(c, u, p));
+                bien++;
             } catch (Throwable t) {
                 Log.e("EstacionClima", "Widget " + id, t);
+                if (error.length() == 0) error = String.valueOf(t);
             }
         }
+        return bien + " de " + ids.length + " entregados" + (error.length() > 0 ? " (error: " + error + ")" : "");
     }
 
     private static int fondo(Pronostico p) {

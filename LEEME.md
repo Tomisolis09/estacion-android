@@ -1,4 +1,4 @@
-# Estación Meteorológica v4.1 – Android
+# Estación Meteorológica v4.2 – Android
 
 Novedades: widget (temperatura, ubicación y próximos 3 días), notificaciones diarias y semanales configurables,
 ubicación por GPS, solapa Actividades, alertas oficiales del SMN, sismos y posible tsunami (solo cerca de la costa),
