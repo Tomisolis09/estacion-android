@@ -1,6 +1,6 @@
 # Política de privacidad – Estación Meteorológica
 
-Última actualización: 13 de octubre de 2026
+Última actualización: 14 de octubre de 2026
 
 Estación Meteorológica muestra el pronóstico del tiempo, alertas meteorológicas, sismos y actividades al aire libre para Argentina.
 
@@ -14,7 +14,6 @@ Estación Meteorológica muestra el pronóstico del tiempo, alertas meteorológi
 - **USGS** (https://earthquake.usgs.gov): recibe las coordenadas de tu ubicación para devolver los sismos cercanos.
 - **BigDataCloud** (https://www.bigdatacloud.com): recibe las coordenadas para devolver el nombre del lugar donde estás.
 - **Servicio Meteorológico Nacional** (https://www.smn.gob.ar): la app descarga las alertas públicas vigentes y las filtra en tu dispositivo. No se le envía tu ubicación. Las alertas se publican con licencia CC BY 4.0.
-- **Google AdMob:** muestra anuncios. Puede recopilar y usar el identificador de publicidad de tu dispositivo, la dirección IP, datos de uso de la app e información del dispositivo para mostrar anuncios y medir su rendimiento, y puede personalizarlos si lo permitís. Podés restablecer o desactivar el identificador de publicidad desde los ajustes de tu dispositivo (Ajustes > Google > Anuncios). Más información: https://policies.google.com/technologies/ads
 
 No se envía tu nombre, correo ni ningún dato que te identifique a los servicios de clima, sismos y nombres de lugar.
 
@@ -25,7 +24,7 @@ Esta app **no es un servicio oficial ni del gobierno**. La información es orien
 La app no está dirigida a menores de 13 años.
 
 **Lo que no hacemos**
-No hay cuentas ni registro de usuarios. No vendemos tus datos.
+No hay cuentas ni registro de usuarios. No mostramos anuncios ni usamos identificadores de publicidad. No vendemos tus datos.
 
 **Contacto**
 tomisolisrider09@gmail.com

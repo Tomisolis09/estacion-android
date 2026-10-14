@@ -4,6 +4,8 @@
 # Para cambiar el ID real de AdMob, reemplazá el valor de ADMOB_APP_ID (formato ca-app-pub-XXXX~YYYY).
 set -e
 ADMOB_APP_ID="ca-app-pub-7520034420780164~2580808090"
+# 0 = sin anuncios (versión actual: no se agrega AdMob al manifiesto). 1 = con anuncios (ver LEEME.md > "Anuncios")
+USAR_ADMOB=0
 
 MANIFEST=android/app/src/main/AndroidManifest.xml
 [ -f "$MANIFEST" ] || { echo "ERROR: no existe $MANIFEST (¿falló 'npx cap add android'?)"; exit 1; }
@@ -22,7 +24,7 @@ echo "Código nativo copiado a $DEST ($(ls native/java/*.java | wc -l) archivos)
 cp -r native/res/. android/app/src/main/res/
 
 # 3) Manifiesto: permisos, widget, receptores de alarmas y AdMob
-APP_ID="$APP_ID" ADMOB_APP_ID="$ADMOB_APP_ID" MANIFEST="$MANIFEST" python3 - <<'PY'
+APP_ID="$APP_ID" ADMOB_APP_ID="$ADMOB_APP_ID" USAR_ADMOB="$USAR_ADMOB" MANIFEST="$MANIFEST" python3 - <<'PY'
 import os, re
 p = os.environ["MANIFEST"]
 s = open(p, encoding="utf-8").read()
@@ -61,7 +63,7 @@ if "EstacionManifest" not in s:
 '''
     s = s.replace("</application>", receptores + "    </application>", 1)
 
-if "com.google.android.gms.ads.APPLICATION_ID" not in s:
+if os.environ.get("USAR_ADMOB") == "1" and "com.google.android.gms.ads.APPLICATION_ID" not in s:
     meta = '        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="%s" />\n' % os.environ["ADMOB_APP_ID"]
     s = s.replace("</application>", meta + "    </application>", 1)
 
@@ -70,7 +72,9 @@ print("Manifiesto actualizado")
 PY
 
 # Verificaciones: si algo no quedó, se corta acá para no publicar una app incompleta
-for clave in ".WidgetProvider" ".AlarmaReceiver" ".ArranqueReceiver" "com.google.android.gms.ads.APPLICATION_ID" "ACCESS_FINE_LOCATION" "POST_NOTIFICATIONS"; do
+CLAVES=(".WidgetProvider" ".AlarmaReceiver" ".ArranqueReceiver" "ACCESS_FINE_LOCATION" "POST_NOTIFICATIONS")
+[ "$USAR_ADMOB" = "1" ] && CLAVES+=("com.google.android.gms.ads.APPLICATION_ID")
+for clave in "${CLAVES[@]}"; do
   grep -q "$clave" "$MANIFEST" || { echo "ERROR: falta $clave en el manifiesto"; exit 1; }
 done
 # El MainActivity propio debe registrar el plugin nativo
@@ -83,7 +87,7 @@ npx capacitor-assets generate --android
 GRADLE=android/app/build.gradle
 VC="${GITHUB_RUN_NUMBER:-1}"
 sed -i -E "s/versionCode [0-9]+/versionCode $VC/" "$GRADLE"
-sed -i -E "s/versionName \"[^\"]*\"/versionName \"3.8.$VC\"/" "$GRADLE"
+sed -i -E "s/versionName \"[^\"]*\"/versionName \"3.9.$VC\"/" "$GRADLE"
 grep -q "versionCode $VC" "$GRADLE" || echo "AVISO: no se pudo actualizar el versionCode en build.gradle (revisalo a mano antes de subir a Play Store)"
-grep -q "versionName \"3.8.$VC\"" "$GRADLE" || echo "AVISO: no se pudo actualizar el versionName"
-echo "Listo: versión 3.8.$VC"
+grep -q "versionName \"3.9.$VC\"" "$GRADLE" || echo "AVISO: no se pudo actualizar el versionName"
+echo "Listo: versión 3.9.$VC"

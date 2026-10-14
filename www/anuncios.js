@@ -11,6 +11,7 @@
 //   · VIDEO CON PREMIO (opcional): botón en Ajustes; el usuario elige verlo y a cambio no ve anuncios 30 min.
 (function () {
   var CONFIG = {
+    ACTIVOS: false, // false = sin anuncios (versión actual). Para volver a activarlos ver LEEME.md > "Anuncios"
     FORZAR_PRUEBA: false, // ponelo en true solo si querés ver anuncios de prueba también en la versión publicada
 
     VISIBLE_MS: 60 * 1000,        // cuánto tiempo está el banner
@@ -32,6 +33,7 @@
   var cap = window.Capacitor;
   var API = { transicion: function () {}, videoDisponible: function () { return false; }, videoPremio: function () { return Promise.resolve({ ok: false }); } };
   window.ANUNCIOS = API;
+  if (!CONFIG.ACTIVOS) return;
   var nativo = !!(cap && ((cap.isNativePlatform && cap.isNativePlatform()) ||
     (cap.getPlatform && cap.getPlatform() === "android") || /; wv\)/.test(navigator.userAgent)));
   if (!nativo) return;

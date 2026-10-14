@@ -43,7 +43,7 @@ const estado = {
   ubic: leer("ubicacion"), datos: leer("ultimoClima"), ajustes: cargarAjustes(), tab: leer("tab") || "hoy",
   metrica: "temp", diaAbierto: 0, cargando: false, error: "", rot: 0, lineas: [], ultima: 0,
   gpsEstado: "", // "", "buscando", "sin-permiso"
-  actDia: 1, planDia: 0, actAbierta: null, avAbierto: null, avisos: { smn: null, sismos: null, cargando: false, error: "", ultima: 0 },
+  actDia: 1, planDia: 0, seqClima: 0, gpsFallo: false, actAbierta: null, avAbierto: null, avisos: { smn: null, sismos: null, cargando: false, error: "", ultima: 0 },
   rio: { cargando: false, ts: 0, lat: null, lon: null, eval: null, u: null, error: "" },
 };
 
@@ -57,7 +57,7 @@ async function sincronizar() {
     const r = await NATIVO.sincronizar({
       ajustes: { notif: estado.ajustes.notif, alertas: estado.ajustes.alertas },
       ubicacion: estado.ubic ? { lat: estado.ubic.lat, lon: estado.ubic.lon, nombre: estado.ubic.nombre } : undefined,
-      clima,
+      clima, climaTs: estado.ultima || 0,
       crecida: crecidaParaNativo(),
       omClave: OPEN_METEO_CLAVE || "",
     });
@@ -73,20 +73,34 @@ const ubicOk = () => !!(estado.ubic && estado.ubic.lat != null);
 function guardarAjustes() { guardar("ajustes", estado.ajustes); sincronizar(); }
 
 // ---------- clima ----------
-async function pedirClima() {
+// El pronóstico no se vuelve a bajar si el guardado es del mismo lugar y tiene menos de 30 minutos
+// (el modelo se actualiza cada hora): así se gastan muchas menos llamadas. "forzar" = botón de actualizar (mínimo 2 min).
+const CLIMA_TTL_MS = 30 * 60000, CLIMA_MIN_MANUAL_MS = 2 * 60000;
+async function pedirClima(forzar = false) {
   if (!estado.ubic) return;
+  const m = leer("climaMeta");
+  const edadMax = forzar === true ? CLIMA_MIN_MANUAL_MS : CLIMA_TTL_MS;
+  if (estado.datos && m && m.ts && m.lat != null && distanciaKm(m.lat, m.lon, estado.ubic.lat, estado.ubic.lon) < 2 && Date.now() - m.ts < edadMax) {
+    estado.ultima = m.ts; estado.error = ""; render(); cargarRio(); cargarAvisos();
+    return;
+  }
+  const seq = ++estado.seqClima, { lat, lon } = estado.ubic; // si el lugar cambia mientras baja, se descarta la respuesta vieja
   estado.cargando = true; estado.error = ""; pintarCarga();
-  const p = new URLSearchParams({ ...PARAMS, latitude: estado.ubic.lat, longitude: estado.ubic.lon });
+  const p = new URLSearchParams({ ...PARAMS, latitude: lat, longitude: lon });
   try {
     let r = await fetch(`${URL_CLIMA}?${p}${omClave}`);
     if (!r.ok) { p.delete("minutely_15"); r = await fetch(`${URL_CLIMA}?${p}${omClave}`); }
     if (!r.ok) throw new Error("HTTP " + r.status);
-    estado.datos = await r.json(); estado.ultima = Date.now();
+    const datos = await r.json();
+    if (seq !== estado.seqClima) return;
+    estado.datos = datos; estado.ultima = Date.now();
     guardar("ultimoClima", estado.datos);
+    guardar("climaMeta", { ts: estado.ultima, lat, lon });
     sincronizar();
     cargarRio();
     cargarAvisos();
   } catch (e) {
+    if (seq !== estado.seqClima) return;
     estado.error = estado.datos ? "Sin conexión. Mostrando el último pronóstico guardado." : "No se pudo obtener el clima. Revisá tu conexión.";
   }
   estado.cargando = false; pintarCarga(); armarLineas(); render();
@@ -108,53 +122,90 @@ function armarLineas() {
 }
 
 // ---------- ubicación por GPS ----------
+// Cualquier espera externa (GPS, internet) tiene un límite propio: así la app nunca se queda "buscando" para siempre.
+const conLimite = (prom, ms) => new Promise((ok, mal) => {
+  const t = setTimeout(() => mal(new Error("tiempo agotado")), ms);
+  Promise.resolve(prom).then(v => { clearTimeout(t); ok(v); }, e => { clearTimeout(t); mal(e); });
+});
+// El permiso se pide aparte y sin reloj: antes el tiempo corría mientras la persona leía el cartel de Android y la búsqueda fallaba.
+async function permisoUbicacion() {
+  if (!GEO || !GEO.checkPermissions) return true;
+  const ok = x => !!x && (x.location === "granted" || x.coarseLocation === "granted");
+  try {
+    if (ok(await conLimite(GEO.checkPermissions(), 4000))) return true;
+    return ok(await GEO.requestPermissions({ permissions: ["location", "coarseLocation"] }));
+  } catch (e) { return true; } // si no se puede consultar, se intenta igual
+}
 async function posicionActual() {
-  if (GEO) {
-    const p = await GEO.getCurrentPosition({ enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
-    return { lat: p.coords.latitude, lon: p.coords.longitude };
-  }
-  return new Promise((ok, mal) => {
-    if (!navigator.geolocation) return mal(new Error("sin gps"));
-    navigator.geolocation.getCurrentPosition(p => ok({ lat: p.coords.latitude, lon: p.coords.longitude }), mal,
-      { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
-  });
+  const intento = (precisa, espera) => {
+    const opts = { enableHighAccuracy: precisa, timeout: espera, maximumAge: precisa ? 60000 : 600000 };
+    const pedido = GEO
+      ? GEO.getCurrentPosition(opts)
+      : new Promise((ok, mal) => navigator.geolocation ? navigator.geolocation.getCurrentPosition(ok, mal, opts) : mal(new Error("sin gps")));
+    return conLimite(pedido, espera + 3000).then(p => ({ lat: p.coords.latitude, lon: p.coords.longitude }));
+  };
+  if (!(await permisoUbicacion())) throw new Error("sin permiso");
+  // Primero la ubicación rápida (red / última conocida, 8 s); si no alcanza, el GPS preciso (15 s)
+  try { return await intento(false, 8000); } catch (e) { return await intento(true, 15000); }
 }
 async function nombreDeLugar(lat, lon) {
   try {
     const p = new URLSearchParams({ latitude: lat, longitude: lon, localityLanguage: "es" });
-    const r = await fetch(`${URL_REVERSA}?${p}`);
-    if (r.ok) { const n = nombreDesdeReversa(await r.json()); if (n) return n; }
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 5000);
+    try {
+      const r = await fetch(`${URL_REVERSA}?${p}`, { signal: ctl.signal });
+      if (r.ok) { const n = nombreDesdeReversa(await r.json()); if (n) return n; }
+    } finally { clearTimeout(t); }
   } catch (e) { /* se usa el nombre sin conexión */ }
   return nombreOffline(lat, lon);
 }
+// El nombre exacto del lugar se busca después, sin demorar el pronóstico
+async function mejorarNombre(lat, lon) {
+  const n = await nombreDeLugar(lat, lon);
+  const u = estado.ubic;
+  if (u && u.gps && u.lat === lat && u.lon === lon && n && n !== u.nombre) {
+    u.nombre = n; guardar("ubicacion", u); pintarUbic(); sincronizar();
+  }
+}
 // Si el GPS está activado, la ubicación sigue al usuario. Solo se actualiza si se movió más de 5 km.
+let gpsEnCurso = 0, ultimoGps = 0;
 async function seguirGPS(forzar = false) {
   if (!estado.ajustes.gps && !forzar) return false;
+  if (Date.now() - gpsEnCurso < 40000) return false;                  // ya hay una búsqueda en marcha
+  if (!forzar && Date.now() - ultimoGps < 120000) return false;       // no más de una búsqueda cada 2 minutos
+  gpsEnCurso = Date.now();
+  const teniaUbic = !!estado.ubic;
   estado.gpsEstado = "buscando"; pintarUbic();
   try {
     const pos = await posicionActual();
+    ultimoGps = Date.now();
     const lat = +pos.lat.toFixed(4), lon = +pos.lon.toFixed(4);
-    const movio = !estado.ubic || !estado.ubic.gps || distanciaKm(estado.ubic.lat, estado.ubic.lon, lat, lon) > 5;
-    estado.gpsEstado = "";
+    const dist = estado.ubic ? distanciaKm(estado.ubic.lat, estado.ubic.lon, lat, lon) : Infinity;
+    const movio = !estado.ubic || !estado.ubic.gps || dist > 5;
+    estado.gpsEstado = ""; estado.gpsFallo = false;
     if (movio || forzar) {
-      const nombre = await nombreDeLugar(lat, lon);
-      estado.ubic = { nombre, lat, lon, gps: true };
+      const mismoLugar = estado.ubic && dist < 1;
+      estado.ubic = { nombre: mismoLugar ? estado.ubic.nombre : nombreOffline(lat, lon), lat, lon, gps: true };
       guardar("ubicacion", estado.ubic);
       estado.ajustes.gps = true; guardar("ajustes", estado.ajustes);
-      estado.datos = null; guardar("ultimoClima", null); estado.avisos.smn = null; estado.avisos.sismos = null;
+      if (movio) { estado.datos = null; guardar("ultimoClima", null); guardar("climaMeta", null); estado.avisos.smn = null; estado.avisos.sismos = null; }
       render(); sincronizar(); pedirClima();
+      if (!mismoLugar) mejorarNombre(lat, lon);
       return true;
     }
     pintarUbic();
     return false;
   } catch (e) {
-    estado.gpsEstado = "sin-permiso"; pintarUbic();
+    // Si ya había una ubicación guardada se sigue usando, sin mostrar errores; solo falla "en serio" la primera vez
+    if (teniaUbic && !forzar) { estado.gpsEstado = ""; estado.gpsFallo = true; } else estado.gpsEstado = "sin-permiso";
+    pintarUbic();
     return false;
-  }
+  } finally { gpsEnCurso = 0; }
 }
 function pintarUbic() {
   $("#nomUbic").textContent = estado.ubic ? estado.ubic.nombre : "Elegí una ciudad";
   const s = estado.gpsEstado === "buscando" ? "📍 Buscando tu ubicación…"
+    : estado.ubic && estado.ubic.gps && estado.gpsFallo ? "📍 Última ubicación conocida (no se pudo actualizar)"
     : estado.ubic && estado.ubic.gps ? "📍 Ubicación por GPS" : estado.ubic ? "Ubicación elegida a mano" : "Ubicación";
   $("#subUbic").textContent = s;
 }
@@ -546,6 +597,10 @@ async function cargarRio(forzar = false) {
   if (!estado.ubic || r.cargando) return;
   const { lat, lon } = estado.ubic;
   if (!forzar && r.ts && r.lat === lat && r.lon === lon && Date.now() - r.ts < 3 * 3600000) return;
+  if (!forzar && !r.ts) { // al abrir la app: si hay una consulta guardada de hace menos de 3 h, se reutiliza
+    const rc = leer("rioCache");
+    if (rc && rc.lat === lat && rc.lon === lon && Date.now() - rc.ts < 3 * 3600000) { r.u = rc.u; r.eval = rc.eval; r.lat = lat; r.lon = lon; r.ts = rc.ts; sincronizar(); render(); return; }
+  }
   r.cargando = true; r.error = "";
   try {
     // Las crecidas históricas de ese lugar se calculan una sola vez y quedan guardadas
@@ -568,6 +623,7 @@ async function cargarRio(forzar = false) {
       ev = evaluarCrecida(u, (await rp.json()).daily, hoy);
     }
     r.u = u; r.eval = ev; r.lat = lat; r.lon = lon; r.ts = Date.now();
+    guardar("rioCache", { lat, lon, ts: r.ts, u, eval: ev });
     sincronizar();
   } catch (e) {
     r.error = "No se pudo consultar el caudal de los ríos ahora.";
@@ -801,7 +857,7 @@ function render() {
   }
   if (!estado.datos) {
     v.innerHTML = estado.error ? `<div class="estado"><div class="grande">📡</div><p>${esc(estado.error)}</p><button class="btn" id="btnReint">Reintentar</button></div>` : `<div class="estado">Cargando clima…</div>`;
-    const b = $("#btnReint"); if (b) b.onclick = pedirClima; return;
+    const b = $("#btnReint"); if (b) b.onclick = () => pedirClima(true); return;
   }
   const aviso = estado.error ? `<div class="aviso warn">${esc(estado.error)}</div>` : "";
   const scroll = v.scrollTop;
@@ -832,7 +888,7 @@ $("#vista").addEventListener("click", e => {
   const ac = e.target.closest("[data-act]"); if (ac) { estado.actAbierta = estado.actAbierta === ac.dataset.act ? null : ac.dataset.act; render(); return; }
   const d = e.target.closest("[data-dia]"); if (d) { const i = +d.dataset.dia; estado.diaAbierto = estado.diaAbierto === i ? -1 : i; render(); }
 });
-$("#btnRefrescar").onclick = () => { if (estado.ubic && estado.ubic.gps) seguirGPS(); pedirClima(); };
+$("#btnRefrescar").onclick = () => { if (estado.ubic && estado.ubic.gps) seguirGPS(true); pedirClima(true); };
 $("#btnAjustes").onclick = () => abrirAjustes();
 
 function abrirEnlace(url) {
@@ -861,6 +917,7 @@ function elegir(ubic) {
   if (!ubic.gps) { estado.ajustes.gps = false; guardar("ajustes", estado.ajustes); }
   cerrarHoja(); render(); sincronizar(); pedirClima();
 }
+const cacheBusqueda = {};
 $("#buscar").addEventListener("input", e => {
   clearTimeout(tBusca); const q = e.target.value.trim();
   if (q.length < 2) { $("#resultados").innerHTML = ""; return; }
@@ -868,7 +925,7 @@ $("#buscar").addEventListener("input", e => {
     const mi = ++seqBusca;
     try {
       const p = new URLSearchParams({ name: q, count: "10", language: "es", countryCode: "AR" });
-      const r = await (await fetch(`${URL_GEO}?${p}${omClave}`)).json();
+      const r = cacheBusqueda[q] || (cacheBusqueda[q] = await (await fetch(`${URL_GEO}?${p}${omClave}`)).json());
       if (mi !== seqBusca) return;
       const res = r.results || [];
       $("#resultados").innerHTML = res.length ? res.map((x, i) => `<button data-i="${i}">${esc(x.name)}<small>${esc([x.admin2, x.admin1].filter(Boolean).join(", "))}</small></button>`).join("") : `<div class="estado" style="padding:16px">Sin resultados</div>`;
@@ -899,7 +956,7 @@ setInterval(() => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden || !estado.ubic) return;
   if (estado.ajustes.gps) seguirGPS();
-  if (Date.now() - estado.ultima > 600000) pedirClima();
+  pedirClima(); // usa el pronóstico guardado si tiene menos de 30 minutos
 });
 
 // Los anuncios de pantalla completa nunca tapan un aviso importante (alerta naranja/roja, sismo fuerte o tsunami)
@@ -911,7 +968,7 @@ window.ANUNCIOS_PERMITIR_PANTALLA_COMPLETA = () => {
 // ARRANQUE
 // ============================================================
 aplicarTema(leer("tema"));
-if (estado.datos) { estado.ultima = 0; armarLineas(); }
+if (estado.datos) { const m = leer("climaMeta"); estado.ultima = (m && m.ts) || 0; armarLineas(); }
 render();
 if (estado.ubic) pedirClima();
 if (estado.ajustes.gps && estado.ajustes.listo) seguirGPS();

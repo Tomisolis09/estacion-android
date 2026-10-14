@@ -1,4 +1,4 @@
-# Estación Meteorológica v3.8 – Android
+# Estación Meteorológica v3.9 – Android
 
 Novedades: widget (temperatura, ubicación y próximos 3 días), notificaciones diarias y semanales configurables,
 ubicación por GPS, solapa Actividades, alertas oficiales del SMN, sismos y posible tsunami (solo cerca de la costa),
@@ -24,7 +24,6 @@ Descargá **apk-de-prueba**, instalalo y probá:
 3. ⚙️ Ajustes > **Probar notificaciones**: tocá las cuatro y verificá que lleguen.
 4. ⚙️ Ajustes > **Agregar widget**, o mantené presionada la pantalla de inicio > Widgets > "Estación".
 5. Solapa **Avisos**: debería decir si hay alertas del SMN y sismos cerca.
-6. En la versión APK los anuncios son siempre de **prueba** (automático).
 
 ## C. Qué tener en cuenta (límites reales)
 - **Ubicación:** se actualiza con el GPS **cuando abrís la app**. El widget y las notificaciones usan la última ubicación guardada
@@ -39,12 +38,12 @@ Descargá **apk-de-prueba**, instalalo y probá:
 
 ## D. Firmar y subir a Play Store
 Igual que antes: el workflow firma el **aab-para-play-store** con tus secrets (`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`).
-En la versión de Play Store los anuncios son **reales** automáticamente (no hace falta editar `anuncios.js`).
+(Esta versión no tiene anuncios; ver la sección "Anuncios" más abajo.)
 Antes de publicar actualizá en Play Console:
 1. **Seguridad de los datos:** ubicación (precisa y aproximada) recopilada y compartida con servicios de terceros para el
-   funcionamiento de la app; no se guarda en servidores propios; identificadores de dispositivo/publicidad por AdMob.
+   funcionamiento de la app; no se guarda en servidores propios; sin identificadores de publicidad.
 2. **Política de privacidad:** republicá el nuevo `PRIVACIDAD.md`.
-3. **Contenido de la app:** contiene anuncios = Sí.
+3. **Contenido de la app:** contiene anuncios = No.
 4. Descripción: agregá "No es una app oficial. Alertas del Servicio Meteorológico Nacional (CC BY 4.0) y sismos del USGS".
 5. Subí capturas nuevas (Hoy, Actividades, Avisos, Widget).
 
@@ -87,16 +86,35 @@ Solo hay aviso real si hay un río importante a ~5 km y el modelo prevé un caud
 Muestra Venus, Júpiter, Marte, Saturno y Mercurio: si se ven esta noche desde tu ubicación (horario, dirección, altura y brillo) y una tira con los próximos 14 días (punto verde = se ve). Tocá un día para ver el detalle de ese día. Se calcula en el teléfono, sin internet (`www/planetas.js`). Cuenta como "visible" si el planeta está a más de 5° sobre el horizonte con el cielo oscuro (Sol a más de 4° bajo el horizonte). No tiene en cuenta nubes ni luces de la ciudad.
 
 ## Pendientes antes de publicar (los tenés que hacer vos)
-1. Contratar el plan comercial de Open-Meteo y pegar la clave en `OPEN_METEO_CLAVE` (`www/nucleo.js`).
-2. Publicar `PRIVACIDAD.md` en una URL pública (por ejemplo GitHub Pages), pegarla en `POLITICA_URL` (`www/nucleo.js`) y en Play Console.
-3. En Play Console: Seguridad de los datos, ID de publicidad, público objetivo (13+) y ficha con atribuciones.
+1. Publicar `PRIVACIDAD.md` en una URL pública (por ejemplo GitHub Pages), pegarla en `POLITICA_URL` (`www/nucleo.js`) y en Play Console.
+2. En Play Console: **contiene anuncios = No**, Seguridad de los datos (ubicación precisa y aproximada: recopilada y compartida con servicios para el funcionamiento de la app; sin ID de publicidad), público objetivo 13+ y ficha con atribuciones.
+3. Open-Meteo: sin anuncios ni suscripciones el servicio gratuito alcanza (ver abajo). Si más adelante activás anuncios, hace falta un plan comercial.
 
-## Licencia de Open-Meteo (importante porque la app tiene anuncios)
-- El servicio **gratuito** de Open-Meteo es solo para uso **no comercial**. Una app con anuncios cuenta como comercial, así que antes de publicar en Play Store contratá un plan en open-meteo.com/en/pricing (hay planes comerciales mensuales).
-- Al contratar te dan una **clave**. Pegala en `www/nucleo.js`, en `OPEN_METEO_CLAVE = ""`. Con eso la app usa sola el servidor de clientes (`customer-api.open-meteo.com`) para el pronóstico, la búsqueda de lugares, el widget, los avisos y los ríos. Sin clave, sigue con el servicio gratuito.
-- La clave queda dentro de la app (cualquiera que la desarme podría verla). Si algún día querés protegerla, se puede poner un servidor intermedio.
+## Licencia de Open-Meteo
+- Según sus términos, el servicio **gratuito** es para uso **no comercial**: una app **sin anuncios ni suscripciones** cuenta como no comercial. Si agregás anuncios (o cobrás), pasa a ser comercial y necesitás un plan pago (open-meteo.com/en/pricing; los precios los ves ahí, no figuran en este documento). Ante la duda, escribí a info@open-meteo.com.
+- El límite gratuito es de 10.000 llamadas por día, 5.000 por hora y 600 por minuto por **dirección IP** (cada celular tiene la suya) y 300.000 por mes. Open-Meteo no tiene panel de estadísticas de uso para el plan gratuito.
+- Al contratar un plan te dan una **clave**: pegala en `www/nucleo.js`, en `OPEN_METEO_CLAVE = ""`. Con eso la app usa sola el servidor de clientes (`customer-api.open-meteo.com`). Sin clave sigue con el servicio gratuito. La clave queda dentro de la app (cualquiera que la desarme podría verla).
 - Open-Meteo pide **atribución** (CC BY 4.0): ya figura en ⚙️ Ajustes. Mencionalo también en la ficha de Play Store.
 
-## Anuncios (AdMob)
-Tus IDs reales ya están cargados (`scripts/preparar-android.sh` y `www/anuncios.js`). Nunca toques los anuncios reales
-desde tu propio celular: podés suspender tu cuenta de AdMob.
+## Anuncios (desactivados por ahora)
+En esta versión **no hay anuncios**: no se incluye AdMob en la app, no se pide el ID de publicidad y la política de privacidad no los menciona. Para volver a activarlos más adelante:
+1. `package.json`: agregá `"@capacitor-community/admob": "8.2.1"` en `dependencies`.
+2. `scripts/preparar-android.sh`: poné `USAR_ADMOB=1`.
+3. `www/anuncios.js`: poné `ACTIVOS: true` (los IDs de AdMob ya están cargados; los de pantalla completa y con premio se crean en AdMob).
+4. `PRIVACIDAD.md`: agregá en "Servicios de terceros": *Google AdMob: muestra anuncios. Puede recopilar y usar el identificador de publicidad de tu dispositivo, la dirección IP, datos de uso de la app e información del dispositivo para mostrar anuncios y medir su rendimiento, y puede personalizarlos si lo permitís. Más información: https://policies.google.com/technologies/ads* y quitá "No mostramos anuncios…".
+5. Contratá un plan de Open-Meteo y pegá la clave en `OPEN_METEO_CLAVE`.
+6. Play Console: contiene anuncios = Sí, declarar el ID de publicidad en Seguridad de los datos.
+Nunca toques los anuncios reales desde tu propio celular: podés suspender tu cuenta de AdMob.
+
+## Menos llamadas (caché)
+- **Pronóstico:** si el guardado es del mismo lugar y tiene menos de 30 minutos, al abrir la app o volver a ella no se vuelve a bajar. El botón de actualizar (arriba) fuerza una descarga, con un mínimo de 2 minutos entre una y otra.
+- **Widget y avisos en segundo plano:** reutilizan el pronóstico guardado si tiene menos de 40 minutos (antes bajaban uno nuevo cada 30).
+- **Ríos:** la consulta se guarda 3 horas, también si cerrás la app. Las crecidas históricas se calculan una sola vez por lugar.
+- **Búsqueda de ciudades:** no repite la misma consulta; **nombre del lugar:** se reutiliza si no te moviste más de 1 km.
+- Cálculo aproximado por persona y por día: abriendo la app ~5 veces: 5 pronósticos como máximo (menos si abre seguido) + con widget unos 24 más; con avisos de ríos hasta ~8 más.
+
+## GPS más rápido
+- Se pide el permiso primero y sin reloj (antes corría el tiempo mientras se leía el cartel de Android).
+- Primero se usa la última ubicación conocida / de red (8 s); si no alcanza, el GPS preciso (15 s). Todo tiene un límite, así que no queda "buscando" para siempre.
+- El pronóstico se muestra con el nombre del lugar más cercano sin conexión y el nombre exacto se completa después.
+- Si no se puede actualizar la ubicación, se sigue usando la última guardada.

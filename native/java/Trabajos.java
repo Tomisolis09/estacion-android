@@ -52,7 +52,7 @@ final class Trabajos {
         }
         if (!forzar && (a == null || !a.diarioOn)) return;
         try {
-            Pronostico p = Datos.pronostico(c, u, true);
+            Pronostico p = Datos.pronostico(c, u, true, 9000, forzar ? 0 : Datos.TTL_MS);
             Resumen.Texto t = Resumen.diario(p, u.nombre);
             Notificador.mostrar(c, 1001, Notificador.CANAL_RESUMEN, t.titulo, t.corto, t.largo);
             if (!forzar) Prefs.marcarEnvio(c, "diario", fechaHoy(System.currentTimeMillis()));
@@ -72,7 +72,7 @@ final class Trabajos {
         }
         if (!forzar && (a == null || !a.semanalOn)) return;
         try {
-            Pronostico p = Datos.pronostico(c, u, true);
+            Pronostico p = Datos.pronostico(c, u, true, 9000, forzar ? 0 : Datos.TTL_MS);
             Resumen.Texto t = Resumen.semanal(p, u.nombre);
             Notificador.mostrar(c, 1002, Notificador.CANAL_RESUMEN, t.titulo, t.corto, t.largo);
             if (!forzar) Prefs.marcarEnvio(c, "semanal", fechaHoy(System.currentTimeMillis()));

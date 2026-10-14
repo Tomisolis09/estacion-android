@@ -10,6 +10,9 @@ final class Datos {
 
     static final int DIAS = 8;
 
+    /** Un pronóstico guardado de hace menos de este tiempo se reutiliza en vez de volver a bajarlo (el modelo cambia cada hora). */
+    static final long TTL_MS = 40L * 60 * 1000;
+
     /**
      * Pronóstico de 8 días. Si descargar es true intenta bajarlo de internet; si falla
      * (o es false) usa el último guardado para esa ubicación.
@@ -22,6 +25,15 @@ final class Datos {
     }
 
     static Pronostico pronostico(Context c, Prefs.Ubic u, boolean descargar, int timeoutMs) throws IOException {
+        return pronostico(c, u, descargar, timeoutMs, TTL_MS);
+    }
+
+    /** maxEdadMs = 0 obliga a descargar (botones de prueba); si no, se reutiliza el guardado si es del mismo lugar y reciente. */
+    static Pronostico pronostico(Context c, Prefs.Ubic u, boolean descargar, int timeoutMs, long maxEdadMs) throws IOException {
+        if (descargar && maxEdadMs > 0 && System.currentTimeMillis() - Prefs.climaMomento(c) < maxEdadMs
+                && Prefs.climaGuardado(c, u.lat, u.lon) != null) {
+            descargar = false;
+        }
         if (descargar) {
             try {
                 String json = Http.get(Pronostico.url(u.lat, u.lon, DIAS, Prefs.claveOm(c)), timeoutMs);

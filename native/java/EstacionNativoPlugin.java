@@ -40,7 +40,9 @@ public class EstacionNativoPlugin extends Plugin {
             Prefs.guardarUbicacion(c, ubic.optDouble("lat"), ubic.optDouble("lon"), ubic.optString("nombre", "Mi ubicación"));
             // El pronóstico que la app ya bajó se comparte: el widget y los avisos lo tienen al instante
             if (clima != null && clima.has("daily") && clima.has("current")) {
-                Prefs.guardarClima(c, clima.toString(), ubic.optDouble("lat"), ubic.optDouble("lon"));
+                Long t = call.getLong("climaTs", null);
+                Prefs.guardarClima(c, clima.toString(), ubic.optDouble("lat"), ubic.optDouble("lon"),
+                        t != null ? t : System.currentTimeMillis());
                 climaNuevo = true;
             }
         }

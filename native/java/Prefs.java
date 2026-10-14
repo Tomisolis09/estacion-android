@@ -78,11 +78,16 @@ final class Prefs {
     }
 
     static void guardarClima(Context c, String json, double lat, double lon) {
+        guardarClima(c, json, lat, lon, System.currentTimeMillis());
+    }
+
+    /** ts = cuándo se bajó realmente ese pronóstico (la app lo informa; así no parece más nuevo de lo que es). */
+    static void guardarClima(Context c, String json, double lat, double lon, long ts) {
         sp(c).edit()
                 .putString("clima_json", json)
                 .putString("clima_lat", Double.toString(lat))
                 .putString("clima_lon", Double.toString(lon))
-                .putLong("clima_ts", System.currentTimeMillis())
+                .putLong("clima_ts", ts)
                 .apply();
     }
 
