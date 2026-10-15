@@ -138,7 +138,7 @@ async function permisoUbicacion() {
 }
 async function posicionActual() {
   const intento = (precisa, espera) => {
-    const opts = { enableHighAccuracy: precisa, timeout: espera, maximumAge: precisa ? 60000 : 600000 };
+    const opts = { enableHighAccuracy: precisa, timeout: espera, maximumAge: precisa ? 30000 : 120000 }; // la ubicación guardada por Android no puede tener más de 2 min
     const pedido = GEO
       ? GEO.getCurrentPosition(opts)
       : new Promise((ok, mal) => navigator.geolocation ? navigator.geolocation.getCurrentPosition(ok, mal, opts) : mal(new Error("sin gps")));
@@ -167,7 +167,9 @@ async function mejorarNombre(lat, lon) {
     u.nombre = n; guardar("ubicacion", u); pintarUbic(); sincronizar();
   }
 }
-// Si el GPS está activado, la ubicación sigue al usuario. Solo se actualiza si se movió más de 5 km.
+// Si el GPS está activado, la ubicación sigue al usuario. Solo se actualiza si se movió más de 2 km.
+const GPS_MOVIMIENTO_KM = 2;
+const registrarGps = (ok, msg) => guardar("gpsLog", { ts: Date.now(), ok, msg: msg || "" });
 let gpsEnCurso = 0, ultimoGps = 0;
 async function seguirGPS(forzar = false) {
   if (!estado.ajustes.gps && !forzar) return false;
@@ -181,7 +183,8 @@ async function seguirGPS(forzar = false) {
     ultimoGps = Date.now();
     const lat = +pos.lat.toFixed(4), lon = +pos.lon.toFixed(4);
     const dist = estado.ubic ? distanciaKm(estado.ubic.lat, estado.ubic.lon, lat, lon) : Infinity;
-    const movio = !estado.ubic || !estado.ubic.gps || dist > 5;
+    const movio = !estado.ubic || !estado.ubic.gps || dist > GPS_MOVIMIENTO_KM;
+    registrarGps(true, `a ${isFinite(dist) ? dist.toFixed(1) + " km de la ubicación guardada" : "primera ubicación"}`);
     estado.gpsEstado = ""; estado.gpsFallo = false;
     if (movio || forzar) {
       const mismoLugar = estado.ubic && dist < 1;
@@ -196,6 +199,7 @@ async function seguirGPS(forzar = false) {
     pintarUbic();
     return false;
   } catch (e) {
+    registrarGps(false, (e && e.message) || String(e));
     // Si ya había una ubicación guardada se sigue usando, sin mostrar errores; solo falla "en serio" la primera vez
     if (teniaUbic && !forzar) { estado.gpsEstado = ""; estado.gpsFallo = true; } else estado.gpsEstado = "sin-permiso";
     pintarUbic();
@@ -206,7 +210,9 @@ function pintarUbic() {
   $("#nomUbic").textContent = estado.ubic ? estado.ubic.nombre : "Elegí una ciudad";
   const s = estado.gpsEstado === "buscando" ? "📍 Buscando tu ubicación…"
     : estado.ubic && estado.ubic.gps && estado.gpsFallo ? "📍 Última ubicación conocida (no se pudo actualizar)"
-    : estado.ubic && estado.ubic.gps ? "📍 Ubicación por GPS" : estado.ubic ? "Ubicación elegida a mano" : "Ubicación";
+    : estado.gpsEstado === "sin-permiso" ? "📍 No se pudo obtener la ubicación (revisá el GPS y el permiso)"
+    : estado.ubic && estado.ubic.gps ? "📍 Ubicación por GPS" + (() => { const g = leer("gpsLog"); return g && g.ok ? " · actualizada " + new Date(g.ts).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : ""; })()
+    : estado.ubic ? "Ubicación elegida a mano" : "Ubicación";
   $("#subUbic").textContent = s;
 }
 
@@ -426,6 +432,7 @@ function abrirAjustes() {
       nota.textContent = [
         `${ok(r.notificaciones)} Notificaciones permitidas${r.canalesBloqueados ? " · canales silenciados: " + r.canalesBloqueados : ""}`,
         `${ok(!!r.ubicacion)} Ubicación guardada: ${r.ubicacion || "ninguna (abrí la app y elegí una)"}`,
+        (() => { const g = leer("gpsLog"); return g ? `${g.ok ? "✅" : "❌"} Última búsqueda de GPS: ${cuando(g.ts)} · ${g.ok ? g.msg : "falló: " + g.msg}` : "ℹ️ GPS: todavía no se buscó la ubicación"; })(),
         `${ok(r.climaMs)} Último pronóstico guardado: ${cuando(r.climaMs)}`,
         `${r.widgets > 0 ? "✅" : "ℹ️"} Widgets en la pantalla de inicio: ${r.widgets}`,
         `Widget: ${r.widgetEstado}`,
@@ -1007,12 +1014,17 @@ setInterval(() => {
   el.style.opacity = 0;
   setTimeout(() => { el.textContent = estado.lineas[estado.rot]; el.style.opacity = 1; }, 250);
 }, 6000);
-// al volver a la app: seguir el GPS y refrescar si pasaron más de 10 minutos
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden || !estado.ubic) return;
+// con la app abierta (por ejemplo en un viaje) se revisa el GPS cada 5 minutos
+setInterval(() => { if (!document.hidden && estado.ubic && estado.ajustes.gps) seguirGPS(); }, 5 * 60000);
+// al volver a la app: seguir el GPS y refrescar el pronóstico si el guardado ya es viejo
+const alVolverALaApp = () => {
+  if (!estado.ubic) return;
   if (estado.ajustes.gps) seguirGPS();
   pedirClima(); // usa el pronóstico guardado si tiene menos de 30 minutos
-});
+};
+document.addEventListener("visibilitychange", () => { if (!document.hidden) alVolverALaApp(); });
+// En Android, al volver a la app el sistema avisa con este evento propio (visibilitychange no siempre se dispara en el WebView)
+document.addEventListener("resume", alVolverALaApp);
 
 // Los anuncios de pantalla completa nunca tapan un aviso importante (alerta naranja/roja, sismo fuerte o tsunami)
 window.ANUNCIOS_PERMITIR_PANTALLA_COMPLETA = () => {

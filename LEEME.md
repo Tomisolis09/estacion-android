@@ -1,4 +1,4 @@
-# Estación Meteorológica v4.2 – Android
+# Estación Meteorológica v4.4 – Android
 
 Novedades: widget (temperatura, ubicación y próximos 3 días), notificaciones diarias y semanales configurables,
 ubicación por GPS, solapa Actividades, alertas oficiales del SMN, sismos y posible tsunami (solo cerca de la costa),
@@ -118,6 +118,11 @@ Nunca toques los anuncios reales desde tu propio celular: podés suspender tu cu
 - **Ríos:** la consulta se guarda 3 horas, también si cerrás la app. Las crecidas históricas se calculan una sola vez por lugar.
 - **Búsqueda de ciudades:** no repite la misma consulta; **nombre del lugar:** se reutiliza si no te moviste más de 1 km.
 - Cálculo aproximado por persona y por día: abriendo la app ~5 veces: 5 pronósticos como máximo (menos si abre seguido) + con widget unos 24 más; con avisos de ríos hasta ~8 más.
+
+## Cómo se actualiza la ubicación por GPS
+- Se busca al abrir la app, **al volver a ella** (también con el evento `resume` de Android) y **cada 5 minutos** mientras está abierta. Solo cambia la ubicación si te moviste más de **2 km** (`GPS_MOVIMIENTO_KM` en `www/app.js`).
+- Debajo del nombre del lugar se ve la hora de la última actualización ("Ubicación por GPS · actualizada 08:12"). Si falla, lo dice; en **⚙️ Ajustes > Diagnóstico** figura la "Última búsqueda de GPS" con el motivo.
+- Con la app **cerrada** no se actualiza: widget y notificaciones usan la última ubicación guardada. Pedir ubicación en segundo plano exige un permiso especial de Google Play (con revisión), por eso no se usa. Abrí la app si viajaste lejos.
 
 ## GPS más rápido
 - Se pide el permiso primero y sin reloj (antes corría el tiempo mientras se leía el cartel de Android).
