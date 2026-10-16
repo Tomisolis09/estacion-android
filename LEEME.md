@@ -1,4 +1,4 @@
-# Estación Meteorológica v4.6 – Android
+# Estación Meteorológica v4.7 – Android
 
 Novedades: widget (temperatura, ubicación y próximos 3 días), notificaciones diarias y semanales configurables,
 ubicación por GPS, solapa Actividades, alertas oficiales del SMN, sismos y posible tsunami (solo cerca de la costa),
@@ -141,3 +141,7 @@ Nunca toques los anuncios reales desde tu propio celular: podés suspender tu cu
 ## Novedades de la v4.6
 
 - El nombre del lugar por GPS ahora muestra la localidad o barrio (por ejemplo "Villa Rosa, Pilar") en vez del partido entero, así se nota el cambio al moverte dentro de una misma ciudad.
+
+## Novedades de la v4.7
+
+- **Guía de uso dentro de la app** (`www/guia.js`): 11 temas (ubicación y GPS, Hoy, Horas y Días, Radar, Actividades, Planetas, Avisos, Notificaciones, Widget, Ajustes y opinión). Se muestra una vez al terminar la bienvenida (y una sola vez a quienes ya tenían la app) y queda siempre en Ajustes → "📖 Cómo usar la app (guía)". Para cambiar los textos, editá la lista `GUIA` en `guia.js`.

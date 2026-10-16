@@ -378,6 +378,7 @@ function mostrarHoja2(html) { $("#hoja2in").innerHTML = html; $("#hoja2").hidden
 function abrirAjustes() {
   const tema = leer("tema") || "auto";
   mostrarHoja2(`<h3>Ajustes</h3>
+    <button class="btn sec" id="btnGuia">📖 Cómo usar la app (guía)</button>
     <div class="sec-tit">Ubicación</div>
     <div class="bloque"><div class="fila-aj"><div class="tx"><b>Seguir mi ubicación (GPS)</b><small>La ubicación se actualiza sola cuando te movés</small></div>${interruptor("aj-gps", estado.ajustes.gps)}</div></div>
     <div class="sec-tit">Actividades</div>
@@ -414,6 +415,7 @@ function abrirAjustes() {
     if (e.target.checked) seguirGPS(true); else { if (estado.ubic) { estado.ubic.gps = false; guardar("ubicacion", estado.ubic); pintarUbic(); } }
   });
   h.querySelector("#btnMisAct").onclick = () => abrirActividades(abrirAjustes);
+  h.querySelector("#btnGuia").onclick = () => abrirGuia("indice");
   h.querySelector("#btnWidget").onclick = async () => {
     const nota = h.querySelector("#widgetNota");
     if (!NATIVO) { nota.textContent = "El widget está disponible en la app instalada en el teléfono."; return; }
@@ -513,8 +515,9 @@ function abrirBienvenida() {
   h.querySelector("#bvManual").onclick = () => { abrirHoja(); };
   h.querySelector("#bvListo").onclick = () => {
     estado.ajustes.actividades = leerSel(); estado.ajustes.listo = true; guardarAjustes(); cerrarHoja2(); render();
-    if (!estado.ubic) abrirHoja();
     pedirPermisoNotif({ querySelector: () => null });
+    if (!estado.ubic) abrirHoja();
+    if (!(leer("guia") || {}).vista) setTimeout(() => { if ($("#hoja").hidden !== false) abrirGuia(0); }, estado.ubic ? 200 : 1500);
   };
   pedirPermisoNotif(h);
 }
@@ -1183,4 +1186,5 @@ if (estado.ubic) pedirClima();
 if (estado.ajustes.gps && estado.ajustes.listo) seguirGPS();
 sincronizar();
 if (!estado.ajustes.listo) { setTimeout(abrirBienvenida, 300); }
+else if (!(leer("guia") || {}).vista) { setTimeout(() => { if ($("#hoja2").hidden && $("#hoja").hidden) abrirGuia(0); }, 2500); } // quien ya tenía la app ve la guía una sola vez
 if ("serviceWorker" in navigator && location.protocol !== "file:" && !esNativa) navigator.serviceWorker.register("sw.js").catch(() => {});

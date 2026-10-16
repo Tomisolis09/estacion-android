@@ -119,6 +119,9 @@ nav button[aria-selected="true"] { color: var(--accent); font-weight: 600; }
 .chips::-webkit-scrollbar { display: none; }
 .paraguas { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--sub); border-left: 4px solid var(--accent); font-size: 22px; }
 .paraguas div { font-size: 15px; display: flex; flex-direction: column; } .paraguas small { color: var(--text2); font-size: 12.5px; }
+.guia-txt p { margin: 8px 0; font-size: 15px; line-height: 1.45; }
+.guia-pts { display: flex; gap: 6px; justify-content: center; margin: 6px 0; } .guia-pts i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); } .guia-pts i.on { background: var(--accent); width: 18px; border-radius: 4px; }
+.btn:disabled { opacity: .4; }
 .chip { flex: 0 0 auto; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 7px 14px; font-size: 13px; color: var(--text2); }
 .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .act { flex: 0 0 auto; width: 100%; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; box-shadow: var(--shadow); display: block; }
@@ -225,6 +228,7 @@ main > * { flex-shrink: 0; }
 
 <script src="nucleo.js"></script>
 <script src="planetas.js"></script>
+<script src="guia.js"></script>
 <script src="app.js"></script>
 <script src="anuncios.js"></script>
 </body>

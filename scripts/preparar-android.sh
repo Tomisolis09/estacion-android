@@ -87,7 +87,7 @@ npx capacitor-assets generate --android
 GRADLE=android/app/build.gradle
 VC="${GITHUB_RUN_NUMBER:-1}"
 sed -i -E "s/versionCode [0-9]+/versionCode $VC/" "$GRADLE"
-sed -i -E "s/versionName \"[^\"]*\"/versionName \"4.6.$VC\"/" "$GRADLE"
+sed -i -E "s/versionName \"[^\"]*\"/versionName \"4.7.$VC\"/" "$GRADLE"
 grep -q "versionCode $VC" "$GRADLE" || echo "AVISO: no se pudo actualizar el versionCode en build.gradle (revisalo a mano antes de subir a Play Store)"
-grep -q "versionName \"4.6.$VC\"" "$GRADLE" || echo "AVISO: no se pudo actualizar el versionName"
-echo "Listo: versión 4.6.$VC"
+grep -q "versionName \"4.7.$VC\"" "$GRADLE" || echo "AVISO: no se pudo actualizar el versionName"
+echo "Listo: versión 4.7.$VC"
