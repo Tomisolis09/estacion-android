@@ -24,6 +24,7 @@ final class Trabajos {
         try {
             if (Programador.ACCION_DIARIO.equals(accion)) diario(c, false);
             else if (Programador.ACCION_SEMANAL.equals(accion)) semanal(c, false);
+            else if (Programador.ACCION_REPETIDO.equals(accion)) repetido(c, false);
             else if (Programador.ACCION_ALERTAS.equals(accion)) alertas(c);
         } catch (Throwable t) {
             Log.e(ETQ, "Error en " + accion, t);
@@ -53,7 +54,7 @@ final class Trabajos {
         if (!forzar && (a == null || !a.diarioOn)) return;
         try {
             Pronostico p = Datos.pronostico(c, u, true, 9000, forzar ? 0 : Datos.TTL_MS);
-            Resumen.Texto t = Resumen.diario(p, u.nombre);
+            Resumen.Texto t = Resumen.diario(p, u.nombre, System.currentTimeMillis());
             Notificador.mostrar(c, 1001, Notificador.CANAL_RESUMEN, t.titulo, t.corto, t.largo);
             if (!forzar) Prefs.marcarEnvio(c, "diario", fechaHoy(System.currentTimeMillis()));
         } catch (IOException e) {
@@ -78,6 +79,45 @@ final class Trabajos {
             if (!forzar) Prefs.marcarEnvio(c, "semanal", fechaHoy(System.currentTimeMillis()));
         } catch (IOException e) {
             Log.w(ETQ, "Resumen semanal sin datos: " + e.getMessage());
+            if (forzar) avisoPrueba(c, "Sin datos del clima", "No se pudo bajar el pronóstico: " + Datos.ultimoError);
+        }
+    }
+
+    /**
+     * Resumen del clima que se repite cada 4 o 5 horas (opción del resumen diario). Envía el de la última hora programada
+     * que ya pasó y todavía no salió (hasta 90 minutos de demora). forzar = botón de prueba.
+     */
+    static void repetido(Context c, boolean forzar) {
+        Prefs.Ubic u = Prefs.ubicacion(c);
+        if (u == null) {
+            if (forzar) avisoPrueba(c, "Falta la ubicación", "Abrí la app y elegí tu ubicación (GPS o a mano).");
+            return;
+        }
+        long ahora = System.currentTimeMillis();
+        String anterior = Prefs.envio(c, "repetido");
+        boolean marcado = false;
+        if (!forzar) {
+            Ajustes a = Prefs.ajustes(c);
+            if (a == null || !a.diarioOn || a.diarioCada <= 0) return;
+            long[] horas = Tiempo.repeticionesDeHoy(ahora, a.diarioH, a.diarioM, a.diarioCada, a.diarioHastaH, a.diarioHastaM, TimeZone.getDefault());
+            int elegido = -1;
+            for (int i = 0; i < horas.length; i++) if (horas[i] <= ahora) elegido = i;
+            if (elegido < 0) return;
+            long prog = horas[elegido];
+            // No se envía si ya pasaron más de 90 minutos, ni un horario que ya había pasado cuando se cambiaron los ajustes
+            if (ahora - prog > 90 * 60 * 1000L || prog < Prefs.ajustesMomento(c)) return;
+            String marca = fechaHoy(ahora) + "#" + (elegido + 1);
+            if (marca.equals(anterior)) return;
+            Prefs.marcarEnvio(c, "repetido", marca); // se marca antes de descargar: dos alarmas seguidas no envían dos veces
+            marcado = true;
+        }
+        try {
+            Pronostico p = Datos.pronostico(c, u, true, 9000, forzar ? 0 : Datos.TTL_MS);
+            Resumen.Texto t = Resumen.parcial(p, u.nombre, ahora);
+            Notificador.mostrar(c, 1003, Notificador.CANAL_RESUMEN, t.titulo, t.corto, t.largo);
+        } catch (IOException e) {
+            Log.w(ETQ, "Resumen cada pocas horas sin datos: " + e.getMessage());
+            if (marcado) Prefs.marcarEnvio(c, "repetido", anterior); // sin internet: se reintenta en la próxima revisión
             if (forzar) avisoPrueba(c, "Sin datos del clima", "No se pudo bajar el pronóstico: " + Datos.ultimoError);
         }
     }
@@ -117,6 +157,11 @@ final class Trabajos {
             ponerAlDia(c, a);
         } catch (Throwable t) {
             Log.w(ETQ, "Resúmenes atrasados: " + t);
+        }
+        try {
+            repetido(c, false);
+        } catch (Throwable t) {
+            Log.w(ETQ, "Resumen cada pocas horas: " + t);
         }
         if (a.alertasClima) {
             try {
@@ -283,6 +328,16 @@ final class Trabajos {
             diario(c, true);
         } else if ("semanal".equals(tipo)) {
             semanal(c, true);
+        } else if ("repetido".equals(tipo)) {
+            repetido(c, true);
+        } else if ("paraguas".equals(tipo)) {
+            Notificador.mostrar(c, 3997, Notificador.CANAL_RESUMEN,
+                    "📍 " + (u != null ? u.nombre : "Tu ubicación") + " · Clima de las " + hora(System.currentTimeMillis(), "HH:mm"),
+                    "🌦️ 19° · máx 24° · mín 14° · ☂️ Salí con paraguas",
+                    "(Prueba) Así se verá el aviso cuando se anuncie lluvia.\n\n"
+                            + "Ahora: 🌦️ 19° (sensación 18°), Llovizna débil\n"
+                            + "Próximas horas: 18 h 🌧️ 17° 💧80% · 21 h ☁️ 15°\n"
+                            + "☂️ Salí con paraguas: lluvia probable de 16 a 20 h (hasta 80 %, unos 3 mm).");
         } else if ("sismo".equals(tipo)) {
             Sismos.Evento e = new Sismos.Evento();
             e.id = "prueba";

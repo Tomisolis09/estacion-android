@@ -13,7 +13,7 @@ const OPEN_METEO_CLAVE = "";
 const POLITICA_URL = "";
 const CONTACTO_EMAIL = "tomisolisrider09@gmail.com"; // correo al que llegan los comentarios y reportes de errores
 const PLAY_ID = "com.tomisolis.estacionmeteorologica"; // mismo appId que capacitor.config.json
-const APP_VERSION = "4.4"; // número que se ve al pie de cada pantalla (sirve para saber qué APK tenés instalado)
+const APP_VERSION = "4.6"; // número que se ve al pie de cada pantalla (sirve para saber qué APK tenés instalado)
 const omServidor = sub => `https://${OPEN_METEO_CLAVE ? "customer-" : ""}${sub}.open-meteo.com`;
 const omClave = OPEN_METEO_CLAVE ? `&apikey=${encodeURIComponent(OPEN_METEO_CLAVE)}` : "";
 const URL_CLIMA = omServidor("api") + "/v1/forecast";
@@ -699,6 +699,23 @@ const veredicto = p => p >= 80 ? { texto: "Ideal", clase: "ideal" } : p >= 60 ? 
   : p >= 40 ? { texto: "Con precauciones", clase: "regular" } : { texto: "No recomendable", clase: "malo" };
 const fmtHora = H => String(H % 24).padStart(2, "0") + ":00";
 
+// Avisos según el clima previsto para una franja horaria (stats y motivos salen de evaluarActividad / evaluarHorario).
+function notasClima(stats, motivos) {
+  const notas = [];
+  if (motivos.has("tormenta")) notas.push("⛈️ Hay riesgo de tormenta eléctrica en ese horario: no lo hagas al aire libre.");
+  if (stats.sensMax >= 35) notas.push("🥵 Calor intenso: evitá el esfuerzo fuerte, hidratate y buscá sombra.");
+  else if (stats.sensMax >= 30) notas.push("🌡️ Hace calor: tomá agua antes y durante, y usá ropa liviana.");
+  if (stats.sensMin <= 0) notas.push("🧊 Posible hielo en el piso: cuidado con los resbalones. Abrigate bien.");
+  else if (stats.sensMin <= 8) notas.push("🧥 Hace frío: abrigate en capas.");
+  if (stats.uv >= 8) notas.push(`☀️ UV ${nivelUV(stats.uv).toLowerCase()} (${stats.uv.toFixed(1)}): protector solar, gorra y anteojos.`);
+  else if (stats.uv >= 6) notas.push(`☀️ UV alto (${stats.uv.toFixed(1)}): usá protector solar.`);
+  if (stats.prob >= 70) notas.push(`☂️ Es muy probable que llueva (${Math.round(stats.prob)}%${stats.mm >= 1 ? `, unos ${Math.round(stats.mm)} mm` : ""}): salí con paraguas o impermeable, o dejalo para otro momento. El piso va a estar resbaladizo.`);
+  else if (stats.prob >= 40) notas.push(`☂️ Posible lluvia (${Math.round(stats.prob)}%): llevá paraguas o impermeable.`);
+  if (stats.rafaga >= 40) notas.push(`💨 Ráfagas de hasta ${Math.round(stats.rafaga)} km/h: asegurá tus cosas y tené cuidado.`);
+  if (motivos.has("niebla")) notas.push("🌫️ Visibilidad reducida: extremá las precauciones.");
+  return notas;
+}
+
 function evaluarActividad(datos, a, dia) {
   const h = datos.hourly || {}, d = datos.daily || {};
   const fecha = (d.time || [])[dia];
@@ -744,16 +761,7 @@ function evaluarActividad(datos, a, dia) {
   }
   puntaje = Math.max(0, Math.min(100, puntaje));
 
-  if (motivos.has("tormenta")) notas.push("⛈️ Hay riesgo de tormenta eléctrica en ese horario: no lo hagas al aire libre.");
-  if (stats.sensMax >= 35) notas.push("🥵 Calor intenso: evitá el esfuerzo fuerte, hidratate y buscá sombra.");
-  else if (stats.sensMax >= 30) notas.push("🌡️ Hace calor: tomá agua antes y durante, y usá ropa liviana.");
-  if (stats.sensMin <= 0) notas.push("🧊 Posible hielo en el piso: cuidado con los resbalones. Abrigate bien.");
-  else if (stats.sensMin <= 8) notas.push("🧥 Hace frío: abrigate en capas.");
-  if (stats.uv >= 8) notas.push(`☀️ UV ${nivelUV(stats.uv).toLowerCase()} (${stats.uv.toFixed(1)}): protector solar, gorra y anteojos.`);
-  else if (stats.uv >= 6) notas.push(`☀️ UV alto (${stats.uv.toFixed(1)}): usá protector solar.`);
-  if (stats.prob >= 40) notas.push(`☂️ Posible lluvia (${Math.round(stats.prob)}%): llevá impermeable.`);
-  if (stats.rafaga >= 40) notas.push(`💨 Ráfagas de hasta ${Math.round(stats.rafaga)} km/h: asegurá tus cosas y tené cuidado.`);
-  if (motivos.has("niebla")) notas.push("🌫️ Visibilidad reducida: extremá las precauciones.");
+  notas.push(...notasClima(stats, motivos));
 
   return {
     id: a.id, nombre: a.nombre, emoji: a.emoji, sinHorario: false,
@@ -766,6 +774,140 @@ function evaluarActividad(datos, a, dia) {
 function actividadesDelDia(datos, dia, lista = ACTIVIDADES) {
   return lista.map(a => evaluarActividad(datos, a, dia)).filter(Boolean)
     .sort((x, y) => y.puntaje - x.puntaje);
+}
+
+// ---------- Días y horario propios de cada actividad ----------
+// La persona carga en qué días (0 = domingo ... 6 = sábado) y de qué hora a qué hora hace una actividad: { dias: [1, 3], desde: "18:00", hasta: "19:30" }.
+const DIAS_CORTOS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+const diaSemanaDe = fecha => { const [y, m, d] = String(fecha).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d).getDay(); };
+const minDeHora = t => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || "")); if (!m) return null; const h = +m[1], mi = +m[2]; return h < 24 && mi < 60 ? h * 60 + mi : null; };
+// [desde, hasta] en minutos desde las 00:00. Si termina "antes" de empezar, cruza la medianoche (22:00 a 01:00). null si no sirve.
+function rangoHorario(hr) {
+  const d = minDeHora(hr && hr.desde), h = minDeHora(hr && hr.hasta);
+  if (d === null || h === null || d === h) return null;
+  return [d, h > d ? h : h + 1440];
+}
+const DURACION_MAX_MIN = 14 * 60;
+function limpiarHorarios(h) {
+  const o = {};
+  if (!h || typeof h !== "object") return o;
+  for (const id of Object.keys(h)) {
+    const x = h[id];
+    if (!x || !Array.isArray(x.dias)) continue;
+    const dias = [...new Set(x.dias.filter(n => Number.isInteger(n) && n >= 0 && n <= 6))];
+    const rg = rangoHorario(x);
+    if (!dias.length || !rg || rg[1] - rg[0] > DURACION_MAX_MIN) continue;
+    o[id] = { dias, desde: x.desde, hasta: x.hasta };
+  }
+  return o;
+}
+function horarioDiasTxt(dias) {
+  const n = [1, 2, 3, 4, 5, 6, 0].filter(x => dias.includes(x)).map(x => DIAS_CORTOS[x]);
+  if (n.length === 7) return "Todos los días";
+  return n.length > 1 ? n.slice(0, -1).join(", ") + " y " + n[n.length - 1] : (n[0] || "");
+}
+const horaDecimalTxt = x => {
+  x = ((x % 24) + 24) % 24;
+  let h = Math.floor(x), m = Math.round((x - h) * 60);
+  if (m === 60) { h = (h + 1) % 24; m = 0; }
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+};
+
+// Evalúa el horario elegido por la persona para el día "dia" (0 = hoy). sol = { sale, pone } en horas decimales locales (opcional).
+// Devuelve null si no hay pronóstico para ese día, { pasado: true } si el horario de hoy ya terminó.
+function evaluarHorario(datos, a, dia, hr, sol) {
+  const rg = rangoHorario(hr);
+  const h = (datos && datos.hourly) || {}, d = (datos && datos.daily) || {};
+  const fecha = (d.time || [])[dia];
+  if (!rg || !fecha || !h.time) return null;
+  const i00 = h.time.indexOf(fecha + "T00:00");
+  if (i00 < 0) return null;
+  const base = { id: a.id, nombre: a.nombre, emoji: a.emoji, ventana: `${hr.desde}–${hr.hasta}` };
+  const H0 = Math.floor(rg[0] / 60), H1 = Math.ceil(rg[1] / 60);
+  const horaAhora = dia === 0 ? horaActualDe(datos) : 0;
+  if (dia === 0 && H1 <= horaAhora) return { ...base, pasado: true };
+  const horas = [];
+  for (let H = Math.max(H0, horaAhora); H < H1; H++) {
+    const k = i00 + H;
+    if (k >= h.time.length) break;
+    const x = datosHora(h, k);
+    horas.push({ H, x, esDia: h.is_day ? h.is_day[k] === 1 : true, ...puntajeHora(a, x) });
+  }
+  if (!horas.length) return { ...base, sinDatos: true };
+  const L = horas.length;
+  const media = horas.reduce((t, z) => t + z.s, 0) / L, minimo = Math.min(...horas.map(z => z.s));
+  let puntaje = 0.7 * media + 0.3 * minimo;
+  const motivos = new Set(); horas.forEach(z => z.motivos.forEach(m => motivos.add(m)));
+  if (motivos.has("tormenta")) puntaje = Math.min(puntaje, 35);
+  const xs = horas.map(z => z.x), max = k => Math.max(...xs.map(x => x[k])), min = k => Math.min(...xs.map(x => x[k]));
+  const stats = {
+    sensMin: min("sens"), sensMax: max("sens"), tempMin: min("temp"), tempMax: max("temp"),
+    viento: max("viento"), rafaga: max("rafaga"), uv: max("uv"), prob: max("prob"),
+    mm: xs.reduce((t, x) => t + x.mm, 0), nubes: xs.reduce((t, x) => t + x.nubes, 0) / L,
+  };
+  const esAstro = (a.base || a.id) === "astro";
+  const notas = notasClima(stats, motivos);
+  // Luz natural: si el horario cae de noche, otras precauciones (y para mirar estrellas, esperar a que oscurezca)
+  if (sol && sol.sale != null && sol.pone != null) {
+    const ini = Math.max(rg[0], horaAhora * 60) / 60, fin = rg[1] / 60;
+    if (esAstro) {
+      if (ini < sol.pone + 1) notas.push(`🌆 A esa hora todavía hay luz: el cielo oscuro empieza después de las ${horaDecimalTxt(sol.pone + 1)}.`);
+    } else if (ini >= sol.pone) {
+      notas.push(`🌙 Es de noche en todo tu horario (el sol se pone a las ${horaDecimalTxt(sol.pone)}): usá luces y ropa reflectante, y elegí lugares iluminados.`);
+    } else if (fin > sol.pone) {
+      notas.push(`🌙 Terminás de noche (el sol se pone a las ${horaDecimalTxt(sol.pone)}): llevá luz y ropa reflectante.`);
+    } else if (ini < sol.sale) {
+      notas.push(`🌅 Empezás antes de que salga el sol (${horaDecimalTxt(sol.sale)}): hay poca luz, usá luces y ropa reflectante.`);
+    }
+  }
+  if (esAstro) {
+    const f = faseLunar(new Date(fecha + "T22:00:00"));
+    puntaje -= Math.max(0, f.iluminacion - 0.4) * 40;
+    notas.push(`🌙 Luna ${f.nombre} (${Math.round(f.iluminacion * 100)}% iluminada): ` + (f.iluminacion > 0.6 ? "su brillo dificulta ver estrellas débiles." : "buen momento para observar."));
+    const cielo = (h.cloud_cover ? stats.nubes : 0);
+    if (cielo >= 60) notas.unshift(`☁️ Cielo muy nublado (${Math.round(cielo)}%): tal vez no veas las estrellas.`);
+  }
+  puntaje = Math.max(0, Math.min(100, puntaje));
+  return {
+    ...base, sinHorario: false, propio: true, parcial: dia === 0 && horaAhora > H0,
+    puntaje: Math.round(puntaje), veredicto: veredicto(puntaje),
+    stats, motivos: [...motivos], avisos: notas.filter(n => !n.startsWith("🌙 Luna")), precauciones: notas.concat(a.tips),
+    horas: horas.map(z => ({ H: z.H, temp: z.x.temp, prob: z.x.prob, mm: z.x.mm, viento: z.x.viento, codigo: z.x.codigo, esDia: z.esDia })),
+  };
+}
+
+// ---------- Cielo y nubes (para saber si algo se va a poder ver) ----------
+// Cuánto cielo cubierto hay según el pronóstico por hora entre dos momentos (ms UTC). offSeg = diferencia horaria del lugar.
+// Devuelve null si el pronóstico no cubre al menos la mitad de ese lapso.
+function condicionCielo(datos, desdeMs, hastaMs, offSeg) {
+  const h = datos && datos.hourly;
+  if (!h || !h.time || !h.cloud_cover || !(hastaMs > desdeMs)) return null;
+  let n = 0, nub = 0, prob = 0, lluvia = false, niebla = false;
+  for (let k = 0; k < h.time.length; k++) {
+    const t = h.time[k];
+    const ini = Date.UTC(+t.slice(0, 4), +t.slice(5, 7) - 1, +t.slice(8, 10), +t.slice(11, 13)) - offSeg * 1000;
+    if (ini + 3600000 <= desdeMs || ini >= hastaMs) continue;
+    n++;
+    nub += dato(h, "cloud_cover", k);
+    prob = Math.max(prob, dato(h, "precipitation_probability", k));
+    const c = dato(h, "weather_code", k);
+    if ((c >= 51 && c <= 77) || (c >= 80 && c <= 86) || c >= 95 || dato(h, "precipitation", k) >= 0.3) lluvia = true;
+    if (c === 45 || c === 48) niebla = true;
+    const v = h.visibility && h.visibility[k];
+    if (v != null && v < 2000) niebla = true;
+  }
+  const horas = Math.max(1, Math.ceil((hastaMs - desdeMs) / 3600000));
+  if (n === 0 || n < horas * 0.5) return null;
+  const pct = Math.round(nub / n);
+  // nivel: 0 despejado, 1 algo nublado, 2 muy nublado, 3 cubierto / lluvia / niebla
+  let nivel, emoji, texto, titulo;
+  if (lluvia || prob >= 60) { nivel = 3; emoji = "🌧️"; texto = "Se pronostica lluvia: probablemente no se vea."; titulo = "Con lluvia"; }
+  else if (niebla) { nivel = 3; emoji = "🌫️"; texto = "Niebla o poca visibilidad: probablemente no se vea."; titulo = "Con niebla"; }
+  else if (pct >= 85) { nivel = 3; emoji = "☁️"; texto = `Cielo cubierto (${pct}% de nubes): probablemente no se vea.`; titulo = "Cubierto"; }
+  else if (pct >= 60) { nivel = 2; emoji = "☁️"; texto = `Muy nublado (${pct}% de nubes): tal vez no se vea.`; titulo = "Muy nublado"; }
+  else if (pct >= 30) { nivel = 1; emoji = "⛅"; texto = `Algo nublado (${pct}% de nubes): puede verse entre las nubes.`; titulo = "Algo nublado"; }
+  else { nivel = 0; emoji = "✨"; texto = `Cielo despejado (${pct}% de nubes): buenas chances de verse.`; titulo = "Despejado"; }
+  return { nivel, pct, prob, emoji, texto, titulo };
 }
 
 // ============================================================
@@ -892,18 +1034,47 @@ function nombreOffline(lat, lon) {
 // Respuesta del servicio de nombres (BigDataCloud, versión para apps). null si no sirve.
 function nombreDesdeReversa(j) {
   if (!j || typeof j !== "object") return null;
-  const lugar = (j.city || j.locality || "").trim();
+  // "city" suele ser el partido o municipio entero (ej. Pilar); "locality" es el barrio o localidad (ej. Villa Rosa).
+  // Se muestra la localidad primero para que el nombre cambie al moverse dentro de un mismo partido.
+  const loc = (j.locality || "").trim(), ciu = (j.city || "").trim();
   const prov = (j.principalSubdivision || "").replace(/^Provincia (de |del )/i, "").trim();
-  const partes = [lugar, prov].filter((v, i, a) => v && a.indexOf(v) === i);
+  const base = loc && ciu && loc.toLowerCase() !== ciu.toLowerCase() ? [loc, ciu] : [loc || ciu, prov];
+  const partes = base.filter((v, i, a) => v && a.indexOf(v) === i);
   return partes.length ? partes.join(", ") : null;
+}
+
+
+// ---------- resumen repetido y paraguas ----------
+const LLUVIA_PROB_HORA = 40, LLUVIA_MM_HORA = 0.5; // mismos umbrales que la parte nativa (Pronostico.java)
+// Horas del día en que llega el resumen repetido: desde la hora del diario, cada N horas, hasta la hora límite.
+function horasRepeticion(hora, cada, hasta) {
+  const m = s => { const x = /^(\d{1,2}):(\d{2})$/.exec(s || ""); return x ? +x[1] * 60 + +x[2] : null; };
+  const h0 = m(hora), h1 = m(hasta); const out = [];
+  if (h0 === null || h1 === null || !(cada === 4 || cada === 5)) return out;
+  for (let t = h0 + cada * 60; t <= h1; t += cada * 60) out.push(String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0"));
+  return out;
+}
+// ¿Llueve ahora o va a llover en las próximas 12 horas? -> {ahora, desde, hasta, prob} o null
+function lluviaProxima(d) {
+  if (!d || !d.hourly || !d.current) return null;
+  const h = d.hourly, t = h.time || [], i0 = indiceHoraActual(h, d.current);
+  const llueve = i => (+(h.precipitation_probability || [])[i] || 0) >= LLUVIA_PROB_HORA || (+(h.precipitation || [])[i] || 0) >= LLUVIA_MM_HORA;
+  let d0 = -1, d1 = -1, prob = 0;
+  for (let i = i0; i < Math.min(t.length, i0 + 12); i++) {
+    if (llueve(i)) { if (d0 < 0) d0 = i; d1 = i; prob = Math.max(prob, +(h.precipitation_probability || [])[i] || 0); }
+  }
+  if (d0 < 0) return null;
+  return { ahora: d0 === i0, desde: horaTxt(t[d0]), hasta: horaTxt(t[d1 + 1] || t[d1]), prob };
 }
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
+    horasRepeticion, lluviaProxima,
     PARAMS, dato, describir, icono, gradiente, nivelUV, indiceHoraActual, analizarRadarSatelite,
     condicionMoto, condicionAuto, condicionCaminando, resumenDia, alertasClima, FENOMENOS, NIVELES,
     PRECAUCIONES, precauciones, distanciaKm, traducirLugar, textoHace, urlSismos, filtrarSismos,
-    cercaDeCosta, faseLunar, astrosDelDia, proximasFases, emojiFase, titularFase, ACTIVIDADES, evaluarActividad, actividadesDelDia, CIUDADES, ciudadMasCercana,
+    cercaDeCosta, faseLunar, astrosDelDia, proximasFases, emojiFase, titularFase, ACTIVIDADES, evaluarActividad, actividadesDelDia,
+    notasClima, evaluarHorario, rangoHorario, limpiarHorarios, horarioDiasTxt, diaSemanaDe, DIAS_CORTOS, condicionCielo, CIUDADES, ciudadMasCercana,
     umbralesCrecida, evaluarCrecida, PRECAUCIONES_CRECIDA, URL_CRECIDA_HIST, URL_CRECIDA_PRON, nombreOffline, nombreDesdeReversa, horaActualDe, fenomenoSmn, precaucionesSmn, estiloNivelSmn, vigenciaSmn, NIVEL_SMN,
   };
 }

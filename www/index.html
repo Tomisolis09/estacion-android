@@ -109,11 +109,16 @@ nav button[aria-selected="true"] { color: var(--accent); font-weight: 600; }
 .pl-tira button { flex: 1 1 0; min-width: 0; border: 0; border-radius: 6px; padding: 5px 0 4px; background: var(--sub); color: var(--text2); font-size: 9.5px; line-height: 1.2; text-align: center; }
 .pl-tira button i { display: block; width: 8px; height: 8px; border-radius: 50%; margin: 3px auto 0; background: transparent; border: 1.5px solid var(--line); }
 .pl-tira button.v i { background: #16a34a; border-color: #16a34a; }
+.pl-tira button.n i { background: #f59e0b; border-color: #f59e0b; }
+.pl-leyenda i.n { background: #f59e0b; }
+.cielo { border-radius: 10px; padding: 7px 10px; font-size: 13px; margin-top: 8px; line-height: 1.35; } .cielo.sin { background: var(--sub); color: var(--text2); }
 .pl-tira button[aria-pressed="true"] { outline: 2px solid var(--accent); color: var(--text); font-weight: 700; }
 .pl-leyenda { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); margin: 2px 0 0; }
 .pl-leyenda i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; }
 .chips { flex: 0 0 auto; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
 .chips::-webkit-scrollbar { display: none; }
+.paraguas { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--sub); border-left: 4px solid var(--accent); font-size: 22px; }
+.paraguas div { font-size: 15px; display: flex; flex-direction: column; } .paraguas small { color: var(--text2); font-size: 12.5px; }
 .chip { flex: 0 0 auto; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 7px 14px; font-size: 13px; color: var(--text2); }
 .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 .act { flex: 0 0 auto; width: 100%; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; box-shadow: var(--shadow); display: block; }
@@ -125,6 +130,13 @@ nav button[aria-selected="true"] { color: var(--accent); font-weight: 600; }
 @media (prefers-color-scheme: dark) { :root:not([data-tema="claro"]) .v-ideal { background: #123524; color: #86efac; } :root:not([data-tema="claro"]) .v-bueno { background: #0c2a3d; color: #7dd3fc; } }
 :root[data-tema="oscuro"] .v-ideal { background: #123524; color: #86efac; } :root[data-tema="oscuro"] .v-bueno { background: #0c2a3d; color: #7dd3fc; }
 .puntaje { height: 6px; background: var(--sub); border-radius: 3px; overflow: hidden; margin-top: 10px; } .puntaje i { display: block; height: 100%; border-radius: 3px; }
+.act-bt { display: block; width: 100%; background: none; border: 0; padding: 0; margin: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.hh-fila { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; } .hh-fila::-webkit-scrollbar { display: none; }
+.hh { flex: 0 0 auto; min-width: 52px; background: var(--sub); border-radius: 12px; padding: 6px 4px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; gap: 1px; }
+.hh b { font-size: 14px; } .hh .e { font-size: 16px; } .hh small { color: var(--text2); }
+.agenda { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.ag-fila { display: grid; grid-template-columns: 52px 1fr auto; gap: 8px; align-items: center; width: 100%; text-align: left; background: var(--sub); border: 0; border-radius: 12px; padding: 8px 10px; color: inherit; font: inherit; font-size: 14px; }
+.ag-dia { font-weight: 700; font-size: 13px; } .ag-txt small { display: block; color: var(--text2); font-size: 12px; }
 .act .det { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .act .det ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 .act .ventana { display: inline-block; background: var(--sub); border-radius: 10px; padding: 6px 10px; font-weight: 600; }

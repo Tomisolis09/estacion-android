@@ -15,6 +15,7 @@ final class Programador {
     static final String ACCION_DIARIO = "__PKG__.RESUMEN_DIARIO";
     static final String ACCION_SEMANAL = "__PKG__.RESUMEN_SEMANAL";
     static final String ACCION_ALERTAS = "__PKG__.REVISAR_ALERTAS";
+    static final String ACCION_REPETIDO = "__PKG__.RESUMEN_REPETIDO";
 
     static final long INTERVALO_ALERTAS_MS = 30L * 60 * 1000;
 
@@ -51,6 +52,7 @@ final class Programador {
             quitar(c, am, 1, ACCION_DIARIO);
             quitar(c, am, 2, ACCION_SEMANAL);
             quitar(c, am, 3, ACCION_ALERTAS);
+            quitar(c, am, 4, ACCION_REPETIDO);
             return;
         }
         long ahora = System.currentTimeMillis();
@@ -59,6 +61,11 @@ final class Programador {
         else quitar(c, am, 1, ACCION_DIARIO);
         if (a.semanalOn) poner(c, am, 2, ACCION_SEMANAL, Tiempo.proxima(ahora, a.semanalH, a.semanalM, a.semanalDia, zona));
         else quitar(c, am, 2, ACCION_SEMANAL);
+        // Resumen del clima que se repite cada 4 o 5 horas (solo si el resumen diario está activado)
+        long prox = a.diarioOn && a.diarioCada > 0
+                ? Tiempo.proximaRepeticion(ahora, a.diarioH, a.diarioM, a.diarioCada, a.diarioHastaH, a.diarioHastaM, zona) : -1;
+        if (prox > 0) poner(c, am, 4, ACCION_REPETIDO, prox);
+        else quitar(c, am, 4, ACCION_REPETIDO);
         // Cada 30 minutos: revisa alertas (si están activadas) y mantiene al día el widget
         poner(c, am, 3, ACCION_ALERTAS, ahora + INTERVALO_ALERTAS_MS);
     }

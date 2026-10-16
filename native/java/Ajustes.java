@@ -9,6 +9,10 @@ final class Ajustes {
     boolean diarioOn = true;
     int diarioH = 7;
     int diarioM = 30;
+    /** 0 = no repetir; 4 o 5 = el resumen del clima se repite cada 4 o 5 horas hasta la hora indicada. */
+    int diarioCada = 0;
+    int diarioHastaH = 22;
+    int diarioHastaM = 0;
     boolean semanalOn = true;
     /** Calendar.SUNDAY (1) ... Calendar.SATURDAY (7). Por defecto, domingo. */
     int semanalDia = Calendar.SUNDAY;
@@ -33,6 +37,11 @@ final class Ajustes {
             int[] d = Tiempo.hora(Json.str(diario.get("hora"), null), a.diarioH, a.diarioM);
             a.diarioH = d[0];
             a.diarioM = d[1];
+            int cada = (int) Json.num(diario.get("cada"), 0);
+            a.diarioCada = (cada == 4 || cada == 5) ? cada : 0;
+            int[] hasta = Tiempo.hora(Json.str(diario.get("hasta"), null), a.diarioHastaH, a.diarioHastaM);
+            a.diarioHastaH = hasta[0];
+            a.diarioHastaM = hasta[1];
             a.semanalOn = Json.bool(semanal.get("on"), a.semanalOn);
             // La app manda el día como en JavaScript: 0 = domingo ... 6 = sábado
             int diaJs = (int) Json.num(semanal.get("dia"), 0);

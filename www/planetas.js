@@ -97,15 +97,15 @@ const PLANETAS = (() => {
     const [y, m, d] = fechaISO.slice(0, 10).split("-").map(Number);
     const ini = Date.UTC(y, m - 1, d, 12) - offSeg * 1000;
     const acc = {};
-    for (const p of LISTA) acc[p.id] = { id: p.id, nombre: p.nombre, color: p.color, desde: null, hasta: null, maxAlt: -90, maxMs: null, maxAz: 0, diaSobre: 0, elong: null, mag: null };
+    for (const p of LISTA) acc[p.id] = { id: p.id, nombre: p.nombre, color: p.color, desde: null, hasta: null, maxAlt: -90, maxMs: null, maxAz: 0, azDesde: 0, azHasta: 0, diaSobre: 0, elong: null, mag: null };
     for (let t = ini; t <= ini + 24 * 3600000; t += PASO_MS) {
       const e = estadoEn(t, lat, lon), oscuro = e.solAlt < SOL_MAX;
       for (const p of LISTA) {
         const x = e.pl[p.id], a = acc[p.id];
         if (a.elong === null) { a.elong = elongacion(e, p.id); }
         if (x.alt > ALT_MIN && oscuro) {
-          if (a.desde === null) a.desde = t;
-          a.hasta = t;
+          if (a.desde === null) { a.desde = t; a.azDesde = x.az; }
+          a.hasta = t; a.azHasta = x.az;
           if (x.alt > a.maxAlt) { a.maxAlt = x.alt; a.maxMs = t; a.maxAz = x.az; }
         } else if (x.alt > ALT_MIN) a.diaSobre++;
       }

@@ -23,9 +23,9 @@ const GEO = plugin("Geolocation");
 
 const AJUSTES_BASE = {
   listo: false, gps: true,
-  notif: { diario: { on: true, hora: "07:30" }, semanal: { on: true, dia: 0, hora: "20:00" } },
+  notif: { diario: { on: true, hora: "07:30", cada: 0, hasta: "22:00" }, semanal: { on: true, dia: 0, hora: "20:00" } },
   alertas: { clima: true, sismos: true, inundaciones: true, sens: "moderada" },
-  actividades: [], propias: [],
+  actividades: [], propias: [], horarios: {},
 };
 const clonar = o => JSON.parse(JSON.stringify(o));
 function cargarAjustes() {
@@ -36,6 +36,7 @@ function cargarAjustes() {
     alertas: { ...b.alertas, ...(g.alertas || {}) },
     // Actividades que eligió la persona (vacío = todavía no eligió: se muestran todas) y las que agregó ella misma
     actividades: (Array.isArray(g.actividades) ? g.actividades : []).filter(id => ACTIVIDADES.some(x => x.id === id)),
+    horarios: limpiarHorarios(g.horarios),
     propias: (Array.isArray(g.propias) ? g.propias : []).filter(p => p && typeof p.id === "string" && typeof p.nombre === "string" && ACTIVIDADES.some(x => x.id === p.base)).slice(0, 8),
   };
 }
@@ -53,7 +54,9 @@ async function sincronizar() {
   try {
     // El pronóstico que ya bajó la app (solo lo necesario) se comparte con el widget y los avisos
     const d = estado.datos;
-    const clima = estado.ubic && d && d.current && d.daily ? { current: d.current, daily: d.daily } : undefined;
+    const h = d && d.hourly;
+    const clima = estado.ubic && d && d.current && d.daily ? { current: d.current, daily: d.daily, utc_offset_seconds: d.utc_offset_seconds,
+      hourly: h && h.time ? { time: h.time, temperature_2m: h.temperature_2m, precipitation_probability: h.precipitation_probability, precipitation: h.precipitation, weather_code: h.weather_code } : undefined } : undefined;
     const r = await NATIVO.sincronizar({
       ajustes: { notif: estado.ajustes.notif, alertas: estado.ajustes.alertas },
       ubicacion: estado.ubic ? { lat: estado.ubic.lat, lon: estado.ubic.lon, nombre: estado.ubic.nombre } : undefined,
@@ -112,7 +115,9 @@ function armarLineas() {
   const d = estado.datos; if (!d || !d.current) { estado.lineas = []; return; }
   const a = d.current, di = d.daily || {};
   const ra = analizarRadarSatelite(d);
+  const ll = lluviaProxima(d);
   estado.lineas = [
+    ...(ll ? [ll.ahora ? "☂️ Está lloviendo: salí con paraguas" : `☂️ Lluvia de ${ll.desde} a ${ll.hasta} h: salí con paraguas`] : []),
     `🌡️ Ahora ${Math.round(a.temperature_2m)}° · sensación ${Math.round(a.apparent_temperature)}°`,
     `🔺 Máxima de hoy ${Math.round(dato(di, "temperature_2m_max", 0))}°`,
     `🔻 Mínima de hoy ${Math.round(dato(di, "temperature_2m_min", 0))}°`,
@@ -222,6 +227,11 @@ function pintarUbic() {
 const SENS_TXT = { todos: "Todos los cercanos (desde M4.5)", moderada: "Moderados", fuerte: "Solo los fuertes" };
 const DIAS_SEM = ["Domingos", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábados"];
 function interruptor(id, on) { return `<span class="sw"><input type="checkbox" id="${id}" ${on ? "checked" : ""}><i></i></span>`; }
+function notaRepeticion(dr) {
+  const hs = horasRepeticion(dr.hora, dr.cada, dr.hasta);
+  if (!dr.cada) return "Si hay lluvia anunciada, cada resumen te avisa que salgas con paraguas.";
+  return hs.length ? `Además del resumen de las ${dr.hora}, te llega el clima a las ${hs.join(", ")}. Si se anuncia lluvia, te avisa que salgas con paraguas.` : "Con esa hora límite no queda ningún horario: poné una hora más tarde.";
+}
 function formularioAjustes() {
   const a = estado.ajustes, n = a.notif;
   return `
@@ -229,6 +239,9 @@ function formularioAjustes() {
   <div class="bloque">
     <div class="fila-aj"><div class="tx"><b>Resumen diario</b><small>Cómo está hoy y mañana</small></div>${interruptor("aj-diario-on", n.diario.on)}</div>
     <div class="fila-aj"><div class="tx">A las</div><input type="time" id="aj-diario-hora" value="${n.diario.hora}"></div>
+    <div class="fila-aj"><div class="tx"><b>Repetir durante el día</b><small>Clima actualizado cada 4 o 5 horas</small></div><select id="aj-diario-cada"><option value="0" ${!n.diario.cada ? "selected" : ""}>No repetir</option><option value="4" ${n.diario.cada === 4 ? "selected" : ""}>Cada 4 horas</option><option value="5" ${n.diario.cada === 5 ? "selected" : ""}>Cada 5 horas</option></select></div>
+    <div class="fila-aj"><div class="tx">Hasta las</div><input type="time" id="aj-diario-hasta" value="${n.diario.hasta || "22:00"}"></div>
+    <div class="nota" id="aj-diario-nota" style="padding:0 14px 10px">${notaRepeticion(n.diario)}</div>
     <div class="fila-aj"><div class="tx"><b>Resumen de la semana</b><small>Cómo va a estar la semana</small></div>${interruptor("aj-sem-on", n.semanal.on)}</div>
     <div class="fila-aj"><div class="tx">El día</div><select id="aj-sem-dia">${DIAS_SEM.map((d, i) => `<option value="${i}" ${i === n.semanal.dia ? "selected" : ""}>${d}</option>`).join("")}</select></div>
     <div class="fila-aj"><div class="tx">A las</div><input type="time" id="aj-sem-hora" value="${n.semanal.hora}"></div>
@@ -247,6 +260,8 @@ function enlazarFormulario(raiz) {
   const cambio = () => {
     const a = estado.ajustes;
     a.notif.diario.on = g("aj-diario-on").checked; a.notif.diario.hora = g("aj-diario-hora").value || "07:30";
+    a.notif.diario.cada = +g("aj-diario-cada").value || 0; a.notif.diario.hasta = g("aj-diario-hasta").value || "22:00";
+    const nt = g("aj-diario-nota"); if (nt) nt.textContent = notaRepeticion(a.notif.diario);
     a.notif.semanal.on = g("aj-sem-on").checked; a.notif.semanal.dia = +g("aj-sem-dia").value; a.notif.semanal.hora = g("aj-sem-hora").value || "20:00";
     a.alertas.clima = g("aj-al-clima").checked; a.alertas.sismos = g("aj-al-sismos").checked; a.alertas.inundaciones = g("aj-al-rios").checked; a.alertas.sens = g("aj-sens").value;
     guardarAjustes();
@@ -300,6 +315,7 @@ function enlazarOtras(raiz) {
     lista.innerHTML = estado.ajustes.propias.map(p => `<div class="fila-aj"><div class="tx">${esc(p.emoji || actPorId(p.base).emoji)} ${esc(p.nombre)}<small>Se parece a ${esc(actPorId(p.base).nombre)}</small></div><button type="button" class="btn sec chico" data-quitar="${esc(p.id)}" style="width:auto">Quitar</button></div>`).join("");
     lista.querySelectorAll("[data-quitar]").forEach(b => b.onclick = () => {
       estado.ajustes.propias = estado.ajustes.propias.filter(p => p.id !== b.dataset.quitar);
+      delete estado.ajustes.horarios[b.dataset.quitar];
       guardar("ajustes", estado.ajustes); pintar();
     });
   };
@@ -373,6 +389,7 @@ function abrirAjustes() {
     <div class="sec-tit">Probar notificaciones</div>
     <div class="bloque" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px">
       <button class="btn sec chico" data-prueba="diario">Resumen diario</button><button class="btn sec chico" data-prueba="semanal">Resumen semanal</button>
+      <button class="btn sec chico" data-prueba="repetido">Resumen cada 4-5 h</button><button class="btn sec chico" data-prueba="paraguas">Aviso de paraguas</button>
       <button class="btn sec chico" data-prueba="alerta">Alerta del SMN</button><button class="btn sec chico" data-prueba="sismo">Aviso de sismo</button><button class="btn sec chico" data-prueba="inundacion">Aviso de crecida</button><button class="btn sec chico" data-prueba="rio">Revisar río ahora</button></div>
     <div class="nota" id="pruebaNota">Si la prueba no llega, tocá “Diagnóstico” para ver el motivo.</div>
     <button class="btn sec" id="btnDiag">🔍 Diagnóstico de avisos y widget</button>
@@ -505,6 +522,10 @@ function abrirBienvenida() {
 // ============================================================
 // PANTALLAS
 // ============================================================
+function chipParaguas(d) {
+  const ll = lluviaProxima(d); if (!ll) return "";
+  return `<div class="paraguas">☂️ <div><b>Salí con paraguas</b><small>${ll.ahora ? "Está lloviendo o va a llover en breve" : `Se anuncia lluvia de ${ll.desde} a ${ll.hasta} h`} (hasta ${Math.round(ll.prob)} % de probabilidad)</small></div></div>`;
+}
 function vistaHoy(d) {
   const a = d.current, h = d.hourly, di = d.daily, i0 = indiceHoraActual(h, a);
   const [c1, c2] = gradiente(a.weather_code, a.is_day === 1);
@@ -527,6 +548,7 @@ function vistaHoy(d) {
     <div class="rota" id="rota" aria-live="polite">${esc(estado.lineas[estado.rot % estado.lineas.length] || "")}</div>
   </section>
   ${bannerAvisos()}
+  ${chipParaguas(d)}
   ${tarjetaOpinion()}
   <section class="card"><h2>Próximas horas</h2><div class="tira">${horas}</div></section>
   <section class="card"><h2>Próximos 3 días</h2><div class="tira" style="gap:8px">${prox}</div></section>
@@ -789,6 +811,57 @@ function actividadesUsuarioOTodas() {
   const m = actividadesDelUsuario();
   return { personalizada: m.length > 0, lista: m.length ? m : ACTIVIDADES };
 }
+// Luz natural del día (horas decimales locales) para avisar si la actividad cae de noche
+function solDe(d, dia) {
+  try {
+    const f = (d.daily.time || [])[dia]; if (!f || !estado.ubic) return null;
+    const off = d.utc_offset_seconds != null ? d.utc_offset_seconds : -new Date().getTimezoneOffset() * 60;
+    const a = astrosDelDia(f, estado.ubic.lat, estado.ubic.lon, off);
+    const dec = t => { const m = minDeHora(t); return m === null ? null : m / 60; };
+    return { sale: dec(a.sol.sale), pone: dec(a.sol.pone) };
+  } catch (e) { return null; }
+}
+// Horario propio de una actividad evaluado para el día "dia" (null si ese día no es uno de los suyos)
+function horarioDelDia(d, a, dia) {
+  const hr = estado.ajustes.horarios[a.id], f = (d.daily.time || [])[dia];
+  if (!hr || !f || !hr.dias.includes(diaSemanaDe(f))) return null;
+  return evaluarHorario(d, a, dia, hr, solDe(d, dia));
+}
+const filaHoras = horas => `<div class="hh-fila" role="list" aria-label="Clima hora por hora">${horas.map(z =>
+  `<div class="hh" role="listitem"><small>${String(z.H % 24).padStart(2, "0")} h</small><span class="e">${icono(z.codigo, z.esDia)}</span><b>${Math.round(z.temp)}°</b><small>🌧 ${Math.round(z.prob)}%</small></div>`).join("")}</div>`;
+const statsTxt = st => `🌡️ ${Math.round(st.tempMin)}° a ${Math.round(st.tempMax)}° · 💨 viento ${Math.round(st.viento)} km/h · 🌧 ${Math.round(st.prob)}%`;
+
+function abrirHorario(id) {
+  const act = actividadesUsuarioOTodas().lista.find(x => x.id === id); if (!act) return;
+  const hr = estado.ajustes.horarios[id] || { dias: [], desde: "18:00", hasta: "19:00" };
+  mostrarHoja2(`<h3>${act.emoji} ${esc(act.nombre)}: mis días y horario</h3>
+    <p class="sutil" style="margin:0">Elegí los días y el horario en que lo hacés. La solapa Actividades te muestra el clima de esas horas en ${esc(estado.ubic ? estado.ubic.nombre : "tu ubicación")} y las precauciones para ese momento.</p>
+    <div class="sec-tit">Días</div>
+    <div class="sel-act" id="hr-dias">${[1, 2, 3, 4, 5, 6, 0].map(n => `<button type="button" class="chip" data-hdia="${n}" aria-pressed="${hr.dias.includes(n)}">${DIAS_CORTOS[n]}</button>`).join("")}</div>
+    <div class="sec-tit">Horario</div>
+    <div class="bloque">
+      <div class="fila-aj"><div class="tx">Desde</div><input type="time" id="hr-desde" value="${hr.desde}"></div>
+      <div class="fila-aj"><div class="tx">Hasta</div><input type="time" id="hr-hasta" value="${hr.hasta}"></div>
+    </div>
+    <div class="nota" id="hr-nota">Podés cargar un horario que termine pasada la medianoche (por ejemplo, de 22:00 a 01:00). Máximo 14 horas.</div>
+    <button class="btn" id="hr-guardar">Guardar</button>
+    ${estado.ajustes.horarios[id] ? `<button class="btn sec" id="hr-quitar">Quitar mi horario</button>` : ""}
+    <button class="btn sec" id="hr-cancelar">Cancelar</button>`);
+  const h = $("#hoja2in"), nota = h.querySelector("#hr-nota");
+  h.querySelectorAll("[data-hdia]").forEach(b => b.onclick = () => b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")));
+  const cerrar = () => { estado.actAbierta = id; cerrarHoja2(); render(); };
+  h.querySelector("#hr-cancelar").onclick = cerrarHoja2;
+  const q = h.querySelector("#hr-quitar");
+  if (q) q.onclick = () => { delete estado.ajustes.horarios[id]; guardarAjustes(); cerrar(); };
+  h.querySelector("#hr-guardar").onclick = () => {
+    const nuevo = { dias: [...h.querySelectorAll("[data-hdia]")].filter(b => b.getAttribute("aria-pressed") === "true").map(b => +b.dataset.hdia), desde: h.querySelector("#hr-desde").value, hasta: h.querySelector("#hr-hasta").value };
+    const rg = rangoHorario(nuevo);
+    const error = !nuevo.dias.length ? "Elegí al menos un día." : !rg ? "Completá la hora de inicio y la de fin (no pueden ser iguales)." : rg[1] - rg[0] > DURACION_MAX_MIN ? "El horario puede durar hasta 14 horas." : "";
+    if (error) { nota.textContent = "⚠️ " + error; return; }
+    estado.ajustes.horarios[id] = nuevo; guardarAjustes(); cerrar();
+  };
+}
+
 function vistaActividades(d) {
   const dias = (d.daily.time || []).slice(0, 5);
   if (estado.actDia >= dias.length) estado.actDia = 0;
@@ -800,21 +873,59 @@ function vistaActividades(d) {
     const a = alsDia[0], n = NIVELES[a.n], f = FENOMENOS[precaucionesSmn(a).fenomeno], mas = alsDia.length - 1;
     return `<div class="alerta-dia n${a.n}"><span>${n.emoji}</span><div><b>${f ? f.emoji : "⚠️"} Alerta ${esc(a.nivel)} del SMN: ${esc(a.evento || a.titular)}</b> · ${esc(vigenciaSmn(a))}.${mas ? ` Hay ${mas} alerta${mas > 1 ? "s" : ""} más en la solapa Avisos.` : ""} Revisá bien los horarios.</div></div>`;
   })() : "";
-  const tarjetas = lista.map(r => {
-    if (r.sinHorario) return `<div class="act"><div class="cab"><span class="e">${r.emoji}</span><div><div class="nom">${esc(r.nombre)}</div><div class="sub">Ya no quedan horas útiles hoy</div></div></div></div>`;
-    const abierta = estado.actAbierta === r.id;
-    const det = abierta ? `<div class="det"><div>🕒 Mejor momento: <span class="ventana">${r.ventana}</span></div>
-      <div class="sutil">🌡️ ${Math.round(r.stats.tempMin)}° a ${Math.round(r.stats.tempMax)}° · 💨 viento ${Math.round(r.stats.viento)} km/h · 🌧 ${Math.round(r.stats.prob)}%</div>
-      <b>Precauciones</b><ul>${r.precauciones.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
-    return `<button class="act" data-act="${r.id}" aria-expanded="${abierta}"><div class="cab"><span class="e">${r.emoji}</span>
-      <div><div class="nom">${esc(r.nombre)}</div><div class="sub">🕒 ${r.ventana}</div></div><span class="veredicto v-${r.veredicto.clase}">${r.veredicto.texto}</span></div>
-      <div class="puntaje"><i style="width:${Math.max(4, r.puntaje)}%;background:${colorPuntaje(r.puntaje)}"></i></div>${det}</button>`;
+
+  // Agenda de la persona: sus actividades con día y horario propios, para los próximos días
+  const agenda = [];
+  dias.forEach((f, i) => mias.lista.forEach(a => {
+    const hr = estado.ajustes.horarios[a.id];
+    if (!hr || !hr.dias.includes(diaSemanaDe(f))) return;
+    const r = evaluarHorario(d, a, i, hr, solDe(d, i));
+    if (r && !r.sinDatos) agenda.push({ i, f, r, ini: rangoHorario(hr)[0] });
+  }));
+  agenda.sort((x, y) => x.i - y.i || x.ini - y.ini);
+  const tarjAgenda = agenda.length ? `<section class="card"><h2>🗓️ Tus horarios <span>· próximos días</span></h2>
+    <div class="agenda">${agenda.map(({ i, f, r }) => r.pasado
+      ? `<button class="ag-fila" data-agenda="${i}|${r.id}"><span class="ag-dia">${esc(nombreDia(f, i))}</span><span class="ag-txt">${r.emoji} ${esc(r.nombre)}<small>${r.ventana} · ya pasó</small></span></button>`
+      : `<button class="ag-fila" data-agenda="${i}|${r.id}"><span class="ag-dia">${esc(nombreDia(f, i))}</span><span class="ag-txt">${r.emoji} ${esc(r.nombre)}<small>${r.ventana} · ${esc(r.avisos[0] || "Sin avisos importantes del clima")}</small></span><span class="veredicto v-${r.veredicto.clase}">${r.veredicto.texto}</span></button>`).join("")}</div>
+    <p class="nota" style="margin:8px 0 0">Tocá una fila para ver el clima hora por hora y las precauciones.</p></section>` : "";
+
+  // Tarjetas: primero las que tienen horario propio hoy, después el resto por puntaje
+  const items = lista.map(r => ({ r, mio: horarioDelDia(d, mias.lista.find(x => x.id === r.id), estado.actDia) }));
+  const prop = items.filter(x => x.mio && !x.mio.pasado && !x.mio.sinDatos).sort((x, y) => rangoHorario(estado.ajustes.horarios[x.r.id])[0] - rangoHorario(estado.ajustes.horarios[y.r.id])[0]);
+  const resto = items.filter(x => !prop.includes(x));
+  const tarjetas = prop.concat(resto).map(({ r, mio }) => {
+    const abierta = estado.actAbierta === r.id, hr = estado.ajustes.horarios[r.id];
+    const usa = mio && !mio.pasado && !mio.sinDatos ? mio : null;
+    let sub, ver = null, punt = 0;
+    if (usa) { sub = `🗓️ Tu horario ${usa.ventana}`; ver = usa.veredicto; punt = usa.puntaje; }
+    else if (r.sinHorario) sub = mio && mio.pasado ? `🗓️ Tu horario de hoy (${mio.ventana}) ya pasó` : "Ya no quedan horas útiles hoy";
+    else { sub = `🕒 ${r.ventana}` + (mio && mio.pasado ? ` · tu horario (${mio.ventana}) ya pasó` : ""); ver = r.veredicto; punt = r.puntaje; }
+    let det = "";
+    if (abierta) {
+      const p = [];
+      if (usa) {
+        p.push(`<div>🗓️ Tu horario${estado.actDia === 0 ? " de hoy" : ""}: <span class="ventana">${usa.ventana}</span>${usa.parcial ? ` <span class="sutil">(ya empezó: se evalúa lo que queda)</span>` : ""}</div>`,
+          `<div class="sutil">${statsTxt(usa.stats)}</div>`, filaHoras(usa.horas),
+          `<b>Precauciones para tu horario</b><ul>${usa.precauciones.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`);
+        if (!r.sinHorario) p.push(`<div class="sutil">🕒 Mejor momento del día: ${r.ventana} (${r.veredicto.texto})</div>`);
+      } else if (!r.sinHorario) {
+        p.push(`<div>🕒 Mejor momento: <span class="ventana">${r.ventana}</span></div>`, `<div class="sutil">${statsTxt(r.stats)}</div>`,
+          `<b>Precauciones</b><ul>${r.precauciones.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`);
+      }
+      if (hr) p.push(`<div class="sutil">🗓️ Tus días: ${horarioDiasTxt(hr.dias)} · ${hr.desde}–${hr.hasta}${mio ? "" : " (este día no es uno de tus días)"}</div>`);
+      p.push(`<button type="button" class="btn sec chico" data-horario="${r.id}">🗓️ ${hr ? "Cambiar mi horario" : "Cargar mis días y horario"}</button>`);
+      det = `<div class="det">${p.join("")}</div>`;
+    }
+    return `<div class="act"><button class="act-bt" data-act="${r.id}" aria-expanded="${abierta}"><div class="cab"><span class="e">${r.emoji}</span>
+      <div><div class="nom">${esc(r.nombre)}</div><div class="sub">${sub}</div></div>${ver ? `<span class="veredicto v-${ver.clase}">${ver.texto}</span>` : ""}</div>
+      ${ver ? `<div class="puntaje"><i style="width:${Math.max(4, punt)}%;background:${colorPuntaje(punt)}"></i></div>` : ""}</button>${det}</div>`;
   }).join("");
   const cab = `<div class="act-cab"><div><b>${mias.personalizada ? "Tus actividades" : "Todas las actividades"}</b><div class="sutil">${mias.personalizada ? "Solo las que elegiste" : "Elegí las tuyas para personalizar esta solapa"}</div></div><button class="btn ${mias.personalizada ? "sec " : ""}chico" data-editar-act>✏️ ${mias.personalizada ? "Personalizar" : "Elegir"}</button></div>`;
   return `<div class="chips" role="group" aria-label="Día">${chips}</div>
     ${cab}
+    ${tarjAgenda}
     ${tarjetaAstros(d, estado.actDia, true)}
-    <p class="sutil" style="margin:0">Qué tan bueno es el día para hacer actividades al aire libre en ${esc(estado.ubic.nombre)}. Tocá una para ver el mejor horario y las precauciones.</p>
+    <p class="sutil" style="margin:0">Qué tan bueno es el día para hacer actividades al aire libre en ${esc(estado.ubic.nombre)}. Tocá una para ver el mejor horario y las precauciones; ahí también podés cargar <b>tus días y horario</b> y te mostramos el clima de esas horas.</p>
     ${alDia}${tarjetas}
     <p class="pie">Es una estimación con el pronóstico del modelo Open-Meteo. Ante tormentas o alertas oficiales, no salgas.</p>`;
 }
@@ -843,25 +954,54 @@ function vistaPlanetas(d) {
   const sel = pl.dias[estado.planDia], hh = ms => hhmm(ms, off);
   const nombreFecha = (dia, i) => i === 0 ? "esta noche" : i === 1 ? "mañana a la noche" : `la noche del ${DIAS[dia.f.getUTCDay()].toLowerCase()} ${dia.f.getUTCDate()}/${dia.f.getUTCMonth() + 1}`;
   const brillo = m => m <= -3 ? "muy brillante" : m <= 0 ? "brillante" : m <= 1.2 ? "se ve bien" : "tenue";
-  const altura = a => a < 20 ? "bajo, cerca del horizonte" : a < 45 ? "a media altura" : "bien alto";
+  const puntoDia = d => d.f.getUTCDay();
+  const fechaCorta = dia => `${DIAS[dia.f.getUTCDay()].toLowerCase()} ${dia.f.getUTCDate()}/${dia.f.getUTCMonth() + 1}`;
+  // Nubes previstas para el momento en que se ve cada planeta (null = el pronóstico todavía no llega a esa fecha)
+  const cieloDe = x => x.visible ? condicionCielo(d, x.desde, x.hasta + 600000, off) : null;
+  const clase = n => ["v-ideal", "v-bueno", "v-regular", "v-malo"][n];
+  const puños = a => Math.max(1, Math.round(a / 10));
+  const [yy, mm, dd] = sel.iso.split("-").map(Number);
+  const ini21 = Date.UTC(yy, mm - 1, dd, 21) - off * 1000;
+  const cieloNoche = condicionCielo(d, ini21, ini21 + 6 * 3600000, off);
+
   const tarjetas = PLANETAS.LISTA.map((p, k) => {
-    const x = sel.planetas[k];
+    const x = sel.planetas[k], cielo = cieloDe(x);
     let estadoTxt;
     if (x.visible) {
-      estadoTxt = `<span class="pl-si">✅ Se ve</span> de ${hh(x.desde)} a ${hh(x.hasta)}<br><span class="sutil">Mejor momento: ${hh(x.maxMs)}, hacia el ${PLANETAS.puntos(x.maxAz)}, ${altura(x.maxAlt)} · ${brillo(x.mag)}</span>`;
+      const dirIni = PLANETAS.puntos(x.azDesde), dirFin = PLANETAS.puntos(x.azHasta), dirMax = PLANETAS.puntos(x.maxAz);
+      const mueve = dirIni !== dirFin ? ` · se mueve del ${dirIni} al ${dirFin}` : "";
+      const aviso = cielo
+        ? `<div class="cielo ${clase(cielo.nivel)}">${cielo.emoji} <b>Cielo a esa hora:</b> ${esc(cielo.texto)}</div>`
+        : `<div class="cielo sin">☁️ Todavía no hay pronóstico de nubes para esa fecha.</div>`;
+      estadoTxt = `<span class="pl-si">✅ Se ve</span> de ${hh(x.desde)} a ${hh(x.hasta)}<br>
+        <span class="sutil">📍 Mirá hacia el <b>${dirMax}</b>, a unos ${Math.round(x.maxAlt)}° sobre el horizonte (≈ ${puños(x.maxAlt)} ${puños(x.maxAlt) === 1 ? "puño" : "puños"} con el brazo estirado), a las ${hh(x.maxMs)}${mueve}. Brillo: ${brillo(x.mag)}.</span>${aviso}`;
     } else {
       const m = { "cerca-sol": "Muy cerca del Sol: el resplandor no deja verlo", "solo-dia": "Solo está sobre el horizonte de día", "bajo-horizonte": "No sale por encima del horizonte de noche" }[x.motivo];
       estadoTxt = `<span class="pl-no">No se ve ${nombreFecha(sel, estado.planDia)}</span><br><span class="sutil">${m}</span>`;
     }
-    const prox = pl.dias.findIndex((z, i) => i > estado.planDia && z.planetas[k].visible);
-    const proxTxt = !x.visible ? `<p class="sutil" style="margin:8px 0 0">${prox >= 0 ? `Próxima vez que se ve: <b>${DIAS[pl.dias[prox].f.getUTCDay()].toLowerCase()} ${pl.dias[prox].f.getUTCDate()}/${pl.dias[prox].f.getUTCMonth() + 1}</b>` : "No se ve en los próximos 14 días"}</p>` : "";
-    const tira = pl.dias.map((z, i) => `<button class="${z.planetas[k].visible ? "v" : ""}" data-pldia="${i}" aria-pressed="${i === estado.planDia}" aria-label="${DIAS[z.f.getUTCDay()]} ${z.f.getUTCDate()}: ${z.planetas[k].visible ? "se ve" : "no se ve"}">${DIAS[z.f.getUTCDay()][0]}<br>${z.f.getUTCDate()}<i></i></button>`).join("");
+    // Próxima oportunidad: si no se ve, la próxima noche en que se ve; si se ve pero hay nubes, la próxima con cielo más despejado
+    let proxTxt = "";
+    if (!x.visible) {
+      const prox = pl.dias.findIndex((z, i) => i > estado.planDia && z.planetas[k].visible);
+      proxTxt = `<p class="sutil" style="margin:8px 0 0">${prox >= 0 ? `Próxima vez que se ve: <b>${fechaCorta(pl.dias[prox])}</b>` : "No se ve en los próximos 14 días"}</p>`;
+    } else if (cielo && cielo.nivel >= 2) {
+      const mejor = pl.dias.findIndex((z, i) => { if (i <= estado.planDia || !z.planetas[k].visible) return false; const c = cieloDe(z.planetas[k]); return c && c.nivel <= 1; });
+      proxTxt = `<p class="sutil" style="margin:8px 0 0">${mejor >= 0 ? `Próxima noche con cielo más despejado: <b>${fechaCorta(pl.dias[mejor])}</b>` : "No se espera una noche despejada en los días con pronóstico."}</p>`;
+    }
+    const tira = pl.dias.map((z, i) => {
+      const w = z.planetas[k], c = cieloDe(w), nub = w.visible && c && c.nivel >= 2;
+      return `<button class="${w.visible ? (nub ? "n" : "v") : ""}" data-pldia="${i}" aria-pressed="${i === estado.planDia}" aria-label="${DIAS[puntoDia(z)]} ${z.f.getUTCDate()}: ${w.visible ? (nub ? "se ve, pero puede estar nublado" : "se ve") : "no se ve"}">${DIAS[puntoDia(z)][0]}<br>${z.f.getUTCDate()}<i></i></button>`;
+    }).join("");
     return `<section class="card"><div class="pl-fila"><span class="pl-bola" style="background:radial-gradient(circle at 35% 30%, #fff8, ${p.color} 45%, ${p.color})"></span><div><b>${p.nombre}</b><div class="pl-estado">${estadoTxt}</div></div></div>${proxTxt}<div class="pl-tira" role="group" aria-label="Próximos ${PLANETAS_DIAS} días de ${p.nombre}">${tira}</div></section>`;
   }).join("");
+  const resumenCielo = cieloNoche
+    ? `<div class="cielo ${clase(cieloNoche.nivel)}">${cieloNoche.emoji} <b>Cielo ${nombreFecha(sel, estado.planDia)} (21 a 03 h):</b> ${esc(cieloNoche.titulo)}, ${cieloNoche.pct}% de nubes${cieloNoche.nivel >= 2 ? ". Aunque el planeta esté sobre el horizonte, tal vez no puedas verlo." : "."}</div>`
+    : `<div class="cielo sin">☁️ Todavía no hay pronóstico de nubes para ${nombreFecha(sel, estado.planDia)} (cubre unos 7 días).</div>`;
   return `<section class="card"><h2>🔭 Planetas <span>· ${esc(estado.ubic.nombre)}</span></h2>
-    <p class="sutil" style="margin:0">Cuándo se ven a simple vista desde tu ubicación, ${nombreFecha(sel, estado.planDia)}. Tocá un día para ver los demás.</p>
-    <p class="pl-leyenda"><i></i> día en que se ve</p></section>${tarjetas}
-    <p class="nota">Se calcula en tu teléfono, sin internet. Un planeta cuenta como visible si está a más de 5° sobre el horizonte con el cielo oscuro; las nubes y las luces de la ciudad pueden impedir verlo. Los horarios pueden diferir unos minutos.</p>`;
+    <p class="sutil" style="margin:0">Cuándo y hacia dónde mirar para ver los planetas a simple vista desde tu ubicación, ${nombreFecha(sel, estado.planDia)}, según el clima previsto. Tocá un día para ver los demás.</p>
+    ${resumenCielo}
+    <p class="pl-leyenda"><i></i> se ve · <i class="n"></i> puede taparlo las nubes · ○ no se ve</p></section>${tarjetas}
+    <p class="nota">Las posiciones se calculan en tu teléfono, sin internet; las nubes salen del pronóstico del clima (Open-Meteo), que es una estimación. Un planeta cuenta como visible si está a más de 5° sobre el horizonte con el cielo oscuro. La luz de la ciudad también puede impedir verlo y los horarios pueden diferir unos minutos. Con el brazo estirado, un puño cerrado mide unos 10° de altura.</p>`;
 }
 const VISTAS = { hoy: vistaHoy, horas: vistaHoras, dias: vistaDias, radar: vistaRadar, activ: vistaActividades, avisos: vistaAvisos, planetas: vistaPlanetas };
 
@@ -899,6 +1039,8 @@ $("#vista").addEventListener("click", e => {
   if (e.target.closest("[data-editar-act]")) { abrirActividades(); return; }
   const m = e.target.closest("[data-metrica]"); if (m) { estado.metrica = m.dataset.metrica; render(); return; }
   const ir = e.target.closest("[data-tab-ir]"); if (ir) { estado.tab = ir.dataset.tabIr; guardar("tab", estado.tab); render(); $("#vista").scrollTop = 0; cargarAvisos(); return; }
+  const hh = e.target.closest("[data-horario]"); if (hh) { abrirHorario(hh.dataset.horario); return; }
+  const ag = e.target.closest("[data-agenda]"); if (ag) { const [i, id] = ag.dataset.agenda.split("|"); estado.actDia = +i; estado.actAbierta = id; render(); return; }
   const op = e.target.closest("[data-op]"); if (op) { accionOpinion(op.dataset.op); return; }
   const ur = e.target.closest("[data-url]"); if (ur) { abrirEnlace(ur.dataset.url); return; }
   const aa = e.target.closest("[data-av]"); if (aa) { estado.avAbierto = estado.avAbierto === aa.dataset.av ? null : aa.dataset.av; render(); return; }

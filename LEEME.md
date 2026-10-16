@@ -1,4 +1,4 @@
-# Estación Meteorológica v4.4 – Android
+# Estación Meteorológica v4.6 – Android
 
 Novedades: widget (temperatura, ubicación y próximos 3 días), notificaciones diarias y semanales configurables,
 ubicación por GPS, solapa Actividades, alertas oficiales del SMN, sismos y posible tsunami (solo cerca de la costa),
@@ -129,3 +129,15 @@ Nunca toques los anuncios reales desde tu propio celular: podés suspender tu cu
 - Primero se usa la última ubicación conocida / de red (8 s); si no alcanza, el GPS preciso (15 s). Todo tiene un límite, así que no queda "buscando" para siempre.
 - El pronóstico se muestra con el nombre del lugar más cercano sin conexión y el nombre exacto se completa después.
 - Si no se puede actualizar la ubicación, se sigue usando la última guardada.
+
+## Novedades de la v4.5
+
+- **Actividades con tus días y horarios**: abrí una actividad y tocá "Mis días y horario". Elegí los días y la hora en que la hacés; la solapa te muestra el clima hora por hora de ese horario y las precauciones para ese momento (lluvia → paraguas, viento, calor, frío, UV, anochecer, niebla). Arriba aparece la agenda "Tus horarios · próximos días".
+- **Planetas según el clima**: cada planeta indica hacia dónde mirar y, según nubes, lluvia y niebla a esa hora, si se va a ver bien o si puede taparlo el cielo nublado. También sugiere la próxima noche con cielo más despejado.
+- **Resumen del clima cada 4 o 5 horas**: Ajustes → Notificaciones del clima → "Repetir durante el día" (viene desactivado). Se envía desde la hora del resumen diario hasta la hora límite elegida. Solo funciona con el resumen diario activado.
+- **Aviso de paraguas**: si se anuncia lluvia (probabilidad de 40 % o más en alguna hora, o 0,5 mm por hora; sin datos por hora, 40 % o 1 mm en el día), los resúmenes diarios, repetidos y semanales dicen que salgas con paraguas. En la pantalla Hoy aparece un cartel "Salí con paraguas".
+- Nuevos botones de prueba en Ajustes: "Resumen cada 4-5 h" y "Aviso de paraguas".
+
+## Novedades de la v4.6
+
+- El nombre del lugar por GPS ahora muestra la localidad o barrio (por ejemplo "Villa Rosa, Pilar") en vez del partido entero, así se nota el cambio al moverte dentro de una misma ciudad.

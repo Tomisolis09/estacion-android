@@ -11,7 +11,7 @@ final class Http {
 
     private Http() {}
 
-    static final String USER_AGENT = "EstacionMeteorologica/4.4 (Android)";
+    static final String USER_AGENT = "EstacionMeteorologica/4.6 (Android)";
     private static final int MAX_BYTES = 4 * 1024 * 1024;
 
     /** Cómo se descargan los textos; en las pruebas se reemplaza por datos de ejemplo. */

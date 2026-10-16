@@ -30,6 +30,34 @@ final class Tiempo {
         return ahora + 24L * 3600 * 1000;
     }
 
+    /**
+     * Momentos de hoy en que se repite el resumen del clima: la hora del resumen diario + cada 4 o 5 horas, sin pasar de la
+     * hora de fin. No incluye el primero (ese es el resumen diario común).
+     */
+    static long[] repeticionesDeHoy(long ahora, int hh, int mm, int cadaHoras, int hastaH, int hastaM, TimeZone zona) {
+        if (cadaHoras <= 0) return new long[0];
+        long fin = hoyA(ahora, hastaH, hastaM, zona);
+        Calendar c = Calendar.getInstance(zona);
+        c.setTimeInMillis(hoyA(ahora, hh, mm, zona));
+        long[] tmp = new long[12];
+        int n = 0;
+        for (int k = 1; k <= 12; k++) {
+            c.add(Calendar.HOUR_OF_DAY, cadaHoras);
+            if (c.getTimeInMillis() > fin) break;
+            tmp[n++] = c.getTimeInMillis();
+        }
+        long[] r = new long[n];
+        System.arraycopy(tmp, 0, r, 0, n);
+        return r;
+    }
+
+    /** Próxima repetición de hoy estrictamente después de "ahora", o -1 si ya no queda ninguna hoy. */
+    static long proximaRepeticion(long ahora, int hh, int mm, int cadaHoras, int hastaH, int hastaM, TimeZone zona) {
+        long[] r = repeticionesDeHoy(ahora, hh, mm, cadaHoras, hastaH, hastaM, zona);
+        for (int i = 0; i < r.length; i++) if (r[i] > ahora) return r[i];
+        return -1;
+    }
+
     /** Hoy a las hh:mm (puede ser un momento ya pasado). */
     static long hoyA(long ahora, int hh, int mm, TimeZone zona) {
         Calendar c = Calendar.getInstance(zona);
