@@ -39,6 +39,34 @@ final class Prefs {
         sp(c).edit().putString("envio_" + tipo, dia).apply();
     }
 
+    /** Avisos "antes de tu actividad" calculados por la app (JSON). */
+    static void guardarRecordatorios(Context c, String json) {
+        sp(c).edit().putString("recordatorios", json == null ? "" : json).apply();
+    }
+
+    static String recordatorios(Context c) {
+        return sp(c).getString("recordatorios", "");
+    }
+
+    /** Identificadores de los avisos de actividad ya enviados (los últimos 40). */
+    static java.util.Set<String> enviadosActividad(Context c) {
+        java.util.Set<String> s = new java.util.HashSet<String>();
+        String t = sp(c).getString("envio_actividades", "");
+        if (t.length() > 0) for (String x : t.split("\n")) if (x.length() > 0) s.add(x);
+        return s;
+    }
+
+    static void marcarActividadEnviada(Context c, String id) {
+        String t = sp(c).getString("envio_actividades", "");
+        java.util.List<String> l = new java.util.ArrayList<String>();
+        if (t.length() > 0) for (String x : t.split("\n")) if (x.length() > 0 && !x.equals(id)) l.add(x);
+        l.add(id);
+        while (l.size() > 40) l.remove(0);
+        StringBuilder sb = new StringBuilder();
+        for (String x : l) sb.append(x).append('\n');
+        sp(c).edit().putString("envio_actividades", sb.toString()).apply();
+    }
+
     static void guardarEstadoWidget(Context c, String texto) {
         sp(c).edit().putString("widget_estado", texto).apply();
     }

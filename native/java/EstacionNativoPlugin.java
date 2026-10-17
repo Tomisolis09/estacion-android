@@ -46,6 +46,8 @@ public class EstacionNativoPlugin extends Plugin {
                 climaNuevo = true;
             }
         }
+        String recordatorios = call.getString("recordatorios", null);
+        if (recordatorios != null) Prefs.guardarRecordatorios(c, recordatorios);
         Prefs.guardarClaveOm(c, call.getString("omClave", ""));
         JSObject crecida = call.getObject("crecida");
         if (crecida != null && ubic != null && ubic.has("lat") && ubic.has("lon") && crecida.has("q2")

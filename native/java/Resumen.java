@@ -209,4 +209,15 @@ final class Resumen {
         t.largo = largo.toString();
         return t;
     }
+
+    /** Aviso de lluvia que empieza pronto. */
+    static Texto lluviaPronto(String lugar, Pronostico.Pronto r) {
+        Texto t = new Texto();
+        String h = r.hora.length() >= 16 ? r.hora.substring(11, 16) : r.hora;
+        t.titulo = "☔ " + lugar + " · Se viene la lluvia";
+        t.corto = "Se anuncia lluvia para las " + h + " (en unos " + r.minutos + " min). Salí con paraguas.";
+        t.largo = t.corto + "\nProbabilidad: " + r(r.prob) + " %" + (r.mm >= 0.1 ? ", unos " + (r.mm < 10 ? String.valueOf(Math.round(r.mm * 10) / 10.0).replace('.', ',') : String.valueOf(r(r.mm))) + " mm en esa hora" : "")
+                + ".\nEs una estimación por hora: la lluvia puede adelantarse o demorarse un poco.";
+        return t;
+    }
 }

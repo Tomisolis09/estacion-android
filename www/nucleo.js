@@ -13,7 +13,7 @@ const OPEN_METEO_CLAVE = "";
 const POLITICA_URL = "";
 const CONTACTO_EMAIL = "tomisolisrider09@gmail.com"; // correo al que llegan los comentarios y reportes de errores
 const PLAY_ID = "com.tomisolis.estacionmeteorologica"; // mismo appId que capacitor.config.json
-const APP_VERSION = "4.7"; // número que se ve al pie de cada pantalla (sirve para saber qué APK tenés instalado)
+const APP_VERSION = "4.9"; // número que se ve al pie de cada pantalla (sirve para saber qué APK tenés instalado)
 const omServidor = sub => `https://${OPEN_METEO_CLAVE ? "customer-" : ""}${sub}.open-meteo.com`;
 const omClave = OPEN_METEO_CLAVE ? `&apikey=${encodeURIComponent(OPEN_METEO_CLAVE)}` : "";
 const URL_CLIMA = omServidor("api") + "/v1/forecast";
@@ -1044,6 +1044,97 @@ function nombreDesdeReversa(j) {
 }
 
 
+// ---------- "Qué hacer hoy": decisiones simples a partir del pronóstico ----------
+// Devuelve hasta 6 consejos { e: emoji, t: texto } con las próximas horas del pronóstico por hora.
+function queHacerHoy(d) {
+  if (!d || !d.hourly || !d.current || !d.hourly.time) return [];
+  const h = d.hourly, t = h.time, i0 = indiceHoraActual(h, d.current);
+  if (i0 >= t.length) return [];
+  const num = (arr, i, def) => { const v = arr && arr[i]; return typeof v === "number" && isFinite(v) ? v : def; };
+  const fin12 = Math.min(t.length, i0 + 12), finRopa = Math.min(t.length, i0 + 8);
+  const out = [];
+  const esDiaH = i => (h.is_day ? h.is_day[i] === 1 : true);
+  const hora = i => +t[i].slice(11, 13);
+  const sens = i => num(h.apparent_temperature, i, num(h.temperature_2m, i, 18));
+  // Ropa
+  let smin = Infinity, smax = -Infinity;
+  for (let i = i0; i < finRopa; i++) { smin = Math.min(smin, sens(i)); smax = Math.max(smax, sens(i)); }
+  let ropa;
+  if (smax >= 30) ropa = "Ropa liviana y clara; hidratate seguido.";
+  else if (smin <= 8) ropa = "Abrigo grueso, y gorro o bufanda si salís temprano o de noche.";
+  else if (smax - smin >= 10) ropa = `Salí en capas: ahora ${Math.round(sens(i0))}° y llega a ${Math.round(smax)}°; así te sacás o ponés ropa.`;
+  else if (smax <= 15) ropa = "Campera o abrigo: va a estar fresco.";
+  else if (smax >= 24) ropa = "Ropa fresca; con una prenda liviana alcanza.";
+  else ropa = "Ropa cómoda; una campera liviana por las dudas.";
+  out.push({ e: "👕", t: ropa, k: "ropa" });
+  // Paraguas
+  const ll = lluviaProxima(d);
+  out.push(ll ? { e: "☂️", t: ll.ahora ? "Está lloviendo o va a llover en breve: salí con paraguas." : `Salí con paraguas: se anuncia lluvia de ${ll.desde} a ${ll.hasta} h.`, k: "paraguas" }
+    : { e: "🌂", t: "No hace falta paraguas en las próximas horas.", k: "paraguas" });
+  // Tender la ropa (solo de día)
+  if (esDiaH(i0)) {
+    const diaFin = Math.min(t.length, i0 + 6);
+    let lluvia = false, nubes = 0, n = 0;
+    for (let i = i0; i < diaFin; i++) { if (num(h.precipitation_probability, i, 0) >= 30 || num(h.precipitation, i, 0) > 0.1) lluvia = true; nubes += num(h.cloud_cover, i, 40); n++; }
+    if (lluvia) out.push({ e: "🧺", t: "Mejor no tender la ropa afuera: puede llover.", k: "tender" });
+    else if (n >= 3) out.push({ e: "🧺", t: nubes / n < 60 ? "Buen momento para tender la ropa: sin lluvia y con sol." : "Podés tender la ropa, pero con cielo cubierto se seca más lento.", k: "tender" });
+  }
+  // Protector solar
+  let uvMax = 0, uvH = -1;
+  for (let i = i0; i < fin12; i++) { const u = num(h.uv_index, i, 0); if (u > uvMax) { uvMax = u; uvH = hora(i); } }
+  if (uvMax >= 6) out.push({ e: "🧴", t: `Usá protector solar (UV ${Math.round(uvMax)}, máximo cerca de las ${uvH} h). Evitá el sol de mediodía.`, k: "uv" });
+  // Mejor momento para salir: ventana de 2 horas de día con menos lluvia y temperatura agradable
+  let mejor = null;
+  for (let i = i0; i + 1 < Math.min(t.length, i0 + 14); i++) {
+    if (!esDiaH(i) || !esDiaH(i + 1)) continue;
+    const costo = [i, i + 1].reduce((c, k) => c + num(h.precipitation_probability, k, 0) + Math.abs(sens(k) - 21) * 2 + (num(h.wind_speed_10m, k, 0) > 35 ? 20 : 0), 0);
+    if (!mejor || costo < mejor.costo) mejor = { costo, i };
+  }
+  if (mejor) {
+    const a = mejor.i, p = Math.max(num(h.precipitation_probability, a, 0), num(h.precipitation_probability, a + 1, 0));
+    out.push({ e: "🚶", t: `Mejor momento para salir${t[a].slice(0, 10) !== t[i0].slice(0, 10) ? " mañana" : ""}: de ${hora(a)} a ${(hora(a + 1) + 1) % 24} h (${Math.round(sens(a))}°${p >= 30 ? `, lluvia ${Math.round(p)}%` : ", sin lluvia"}).`, k: "salir" });
+  }
+  // Lavar el auto: hoy y mañana sin lluvia
+  const di = d.daily || {};
+  if (!ll && num(di.precipitation_probability_max, 0, 100) < 30 && num(di.precipitation_probability_max, 1, 100) < 30 && esDiaH(i0)) out.push({ e: "🚗", t: "Buen día para lavar el auto: no se espera lluvia hoy ni mañana.", k: "auto" });
+  return out.slice(0, 6);
+}
+
+// ---------- Avisos antes de las actividades con horario propio ----------
+// Arma los avisos de los próximos 2 días que la parte nativa envía "antesMin" minutos antes de cada actividad.
+// acts: actividades del usuario; horarios: { id: {dias, desde, hasta} }; solDe(dia) opcional (luz natural).
+function recordatoriosActividad(datos, acts, horarios, opciones) {
+  const o = opciones || {};
+  const ahora = o.ahoraMs != null ? o.ahoraMs : Date.now(), antesMin = o.antesMin || 60;
+  const out = [];
+  if (!datos || !datos.daily || !datos.hourly) return out;
+  const off = datos.utc_offset_seconds != null ? datos.utc_offset_seconds : -new Date(ahora).getTimezoneOffset() * 60;
+  (acts || []).forEach(a => {
+    const hr = (horarios || {})[a.id]; if (!hr) return;
+    const rg = rangoHorario(hr); if (!rg) return;
+    for (let dia = 0; dia < 3; dia++) {
+      const f = (datos.daily.time || [])[dia]; if (!f || !hr.dias.includes(diaSemanaDe(f))) continue;
+      const base = Date.UTC(+f.slice(0, 4), +f.slice(5, 7) - 1, +f.slice(8, 10)) - off * 1000;
+      const inicio = base + rg[0] * 60000, fin = base + rg[1] * 60000, fire = inicio - antesMin * 60000;
+      if (fire <= ahora || fire > ahora + 48 * 3600000) continue;
+      const r = evaluarHorario(datos, a, dia, hr, o.solDe ? o.solDe(dia) : null);
+      if (!r || r.pasado || r.sinDatos) continue;
+      const st = r.stats, notas = (r.precauciones || []).slice(0, 6);
+      const t1 = Math.round(st.tempMin), t2 = Math.round(st.tempMax);
+      const resumen = `🌡️ ${t1 === t2 ? t1 + "°" : t1 + "° a " + t2 + "°"} · 💨 ${Math.round(st.viento)} km/h · 🌧 ${Math.round(st.prob)}%`;
+      const cuando = dia === 0 ? "hoy" : dia === 1 ? "mañana" : "";
+      out.push({
+        id: `${a.id}|${f}`, fire, inicio, fin,
+        titulo: `${a.emoji} ${a.nombre} ${cuando ? cuando + " " : ""}a las ${hr.desde} · ${r.veredicto.texto}`,
+        corto: (r.avisos && r.avisos.length ? r.avisos.slice(0, 2).map(x => x.split(/(?<=\.)\s/)[0]).join(" ") : resumen),
+        largo: `${resumen}\n` + notas.join("\n"),
+      });
+    }
+  });
+  out.sort((x, y) => x.fire - y.fire);
+  return out.slice(0, 12);
+}
+
 // ---------- resumen repetido y paraguas ----------
 const LLUVIA_PROB_HORA = 40, LLUVIA_MM_HORA = 0.5; // mismos umbrales que la parte nativa (Pronostico.java)
 // Horas del día en que llega el resumen repetido: desde la hora del diario, cada N horas, hasta la hora límite.
@@ -1064,11 +1155,13 @@ function lluviaProxima(d) {
     if (llueve(i)) { if (d0 < 0) d0 = i; d1 = i; prob = Math.max(prob, +(h.precipitation_probability || [])[i] || 0); }
   }
   if (d0 < 0) return null;
-  return { ahora: d0 === i0, desde: horaTxt(t[d0]), hasta: horaTxt(t[d1 + 1] || t[d1]), prob };
+  const hh = x => horaTxt(x).replace(/^0/, "").replace(/:00$/, "");
+  return { ahora: d0 === i0, desde: hh(t[d0]), hasta: hh(t[d1 + 1] || t[d1]), prob };
 }
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
+    queHacerHoy, recordatoriosActividad,
     horasRepeticion, lluviaProxima,
     PARAMS, dato, describir, icono, gradiente, nivelUV, indiceHoraActual, analizarRadarSatelite,
     condicionMoto, condicionAuto, condicionCaminando, resumenDia, alertasClima, FENOMENOS, NIVELES,

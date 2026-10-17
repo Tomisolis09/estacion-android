@@ -23,8 +23,8 @@ const GEO = plugin("Geolocation");
 
 const AJUSTES_BASE = {
   listo: false, gps: true,
-  notif: { diario: { on: true, hora: "07:30", cada: 0, hasta: "22:00" }, semanal: { on: true, dia: 0, hora: "20:00" } },
-  alertas: { clima: true, sismos: true, inundaciones: true, sens: "moderada" },
+  notif: { diario: { on: true, hora: "07:30", cada: 0, hasta: "22:00" }, semanal: { on: true, dia: 0, hora: "20:00" }, actividad: { on: true, antes: 60 } },
+  alertas: { clima: true, sismos: true, inundaciones: true, lluviaPronto: true, sens: "moderada" },
   actividades: [], propias: [], horarios: {},
 };
 const clonar = o => JSON.parse(JSON.stringify(o));
@@ -32,7 +32,7 @@ function cargarAjustes() {
   const g = leer("ajustes") || {}, b = clonar(AJUSTES_BASE);
   return {
     listo: !!g.listo, gps: g.gps !== false,
-    notif: { diario: { ...b.notif.diario, ...((g.notif || {}).diario || {}) }, semanal: { ...b.notif.semanal, ...((g.notif || {}).semanal || {}) } },
+    notif: { diario: { ...b.notif.diario, ...((g.notif || {}).diario || {}) }, semanal: { ...b.notif.semanal, ...((g.notif || {}).semanal || {}) }, actividad: { ...b.notif.actividad, ...((g.notif || {}).actividad || {}) } },
     alertas: { ...b.alertas, ...(g.alertas || {}) },
     // Actividades que eligió la persona (vacío = todavía no eligió: se muestran todas) y las que agregó ella misma
     actividades: (Array.isArray(g.actividades) ? g.actividades : []).filter(id => ACTIVIDADES.some(x => x.id === id)),
@@ -58,6 +58,7 @@ async function sincronizar() {
     const clima = estado.ubic && d && d.current && d.daily ? { current: d.current, daily: d.daily, utc_offset_seconds: d.utc_offset_seconds,
       hourly: h && h.time ? { time: h.time, temperature_2m: h.temperature_2m, precipitation_probability: h.precipitation_probability, precipitation: h.precipitation, weather_code: h.weather_code } : undefined } : undefined;
     const r = await NATIVO.sincronizar({
+      recordatorios: JSON.stringify(recordatoriosParaNativo()),
       ajustes: { notif: estado.ajustes.notif, alertas: estado.ajustes.alertas },
       ubicacion: estado.ubic ? { lat: estado.ubic.lat, lon: estado.ubic.lon, nombre: estado.ubic.nombre } : undefined,
       clima, climaTs: estado.ultima || 0,
@@ -66,6 +67,15 @@ async function sincronizar() {
     });
     estado.notifOk = !!(r && r.notificaciones);
   } catch (e) { /* sin nativo: no pasa nada */ }
+}
+// Avisos "antes de tu actividad": se calculan con el último pronóstico y la parte nativa los envía a su hora
+function recordatoriosParaNativo() {
+  try {
+    const n = estado.ajustes.notif.actividad;
+    if (!n.on || !estado.datos || !estado.ubic || !Object.keys(estado.ajustes.horarios || {}).length) return [];
+    return recordatoriosActividad(estado.datos, actividadesUsuarioOTodas().lista, estado.ajustes.horarios,
+      { antesMin: n.antes === 120 ? 120 : 60, solDe: dia => solDe(estado.datos, dia) });
+  } catch (e) { return []; }
 }
 // Umbrales de crecida del río cercano (si hay uno), para que los avisos en segundo plano puedan compararlos
 function crecidaParaNativo() {
@@ -242,6 +252,8 @@ function formularioAjustes() {
     <div class="fila-aj"><div class="tx"><b>Repetir durante el día</b><small>Clima actualizado cada 4 o 5 horas</small></div><select id="aj-diario-cada"><option value="0" ${!n.diario.cada ? "selected" : ""}>No repetir</option><option value="4" ${n.diario.cada === 4 ? "selected" : ""}>Cada 4 horas</option><option value="5" ${n.diario.cada === 5 ? "selected" : ""}>Cada 5 horas</option></select></div>
     <div class="fila-aj"><div class="tx">Hasta las</div><input type="time" id="aj-diario-hasta" value="${n.diario.hasta || "22:00"}"></div>
     <div class="nota" id="aj-diario-nota" style="padding:0 14px 10px">${notaRepeticion(n.diario)}</div>
+    <div class="fila-aj"><div class="tx"><b>Avisarme antes de mis actividades</b><small>Si cargaste días y horarios en Actividades, te llega el clima y las precauciones antes de empezar</small></div>${interruptor("aj-act-on", n.actividad.on)}</div>
+    <div class="fila-aj"><div class="tx">Con anticipación de</div><select id="aj-act-antes"><option value="60" ${n.actividad.antes !== 120 ? "selected" : ""}>1 hora</option><option value="120" ${n.actividad.antes === 120 ? "selected" : ""}>2 horas</option></select></div>
     <div class="fila-aj"><div class="tx"><b>Resumen de la semana</b><small>Cómo va a estar la semana</small></div>${interruptor("aj-sem-on", n.semanal.on)}</div>
     <div class="fila-aj"><div class="tx">El día</div><select id="aj-sem-dia">${DIAS_SEM.map((d, i) => `<option value="${i}" ${i === n.semanal.dia ? "selected" : ""}>${d}</option>`).join("")}</select></div>
     <div class="fila-aj"><div class="tx">A las</div><input type="time" id="aj-sem-hora" value="${n.semanal.hora}"></div>
@@ -249,6 +261,7 @@ function formularioAjustes() {
   <div class="sec-tit">Alertas</div>
   <div class="bloque">
     <div class="fila-aj"><div class="tx"><b>Alertas meteorológicas</b><small>Avisos amarillos, naranjas y rojos del SMN para tu ubicación, con qué hacer</small></div>${interruptor("aj-al-clima", a.alertas.clima)}</div>
+    <div class="fila-aj"><div class="tx"><b>Lluvia inminente</b><small>Si ahora no llueve pero empieza en la próxima hora y media, te avisa para que salgas con paraguas (estimación por hora)</small></div>${interruptor("aj-al-lluvia", a.alertas.lluviaPronto)}</div>
     <div class="fila-aj"><div class="tx"><b>Crecida de ríos e inundaciones</b><small>Si hay un río grande cerca tuyo, te avisamos cuando se espera una crecida (estimación del modelo, no oficial)</small></div>${interruptor("aj-al-rios", a.alertas.inundaciones)}</div>
     <div class="fila-aj"><div class="tx"><b>Sismos y tsunami</b><small>Sismos cerca tuyo y posible tsunami si estás en la costa</small></div>${interruptor("aj-al-sismos", a.alertas.sismos)}</div>
     <div class="fila-aj"><div class="tx">Sismos a avisar<small>Recomendado: moderados, desde M5.0 a 300 km, M5.5 a 700 km y M6.5 a 800 km</small></div><select id="aj-sens">${Object.entries(SENS_TXT).map(([k, t]) => `<option value="${k}" ${k === a.alertas.sens ? "selected" : ""}>${t}</option>`).join("")}</select></div>
@@ -262,10 +275,12 @@ function enlazarFormulario(raiz) {
     a.notif.diario.on = g("aj-diario-on").checked; a.notif.diario.hora = g("aj-diario-hora").value || "07:30";
     a.notif.diario.cada = +g("aj-diario-cada").value || 0; a.notif.diario.hasta = g("aj-diario-hasta").value || "22:00";
     const nt = g("aj-diario-nota"); if (nt) nt.textContent = notaRepeticion(a.notif.diario);
+    a.notif.actividad.on = g("aj-act-on").checked; a.notif.actividad.antes = +g("aj-act-antes").value === 120 ? 120 : 60;
+    a.alertas.lluviaPronto = g("aj-al-lluvia").checked;
     a.notif.semanal.on = g("aj-sem-on").checked; a.notif.semanal.dia = +g("aj-sem-dia").value; a.notif.semanal.hora = g("aj-sem-hora").value || "20:00";
     a.alertas.clima = g("aj-al-clima").checked; a.alertas.sismos = g("aj-al-sismos").checked; a.alertas.inundaciones = g("aj-al-rios").checked; a.alertas.sens = g("aj-sens").value;
     guardarAjustes();
-    if (a.notif.diario.on || a.notif.semanal.on || a.alertas.clima || a.alertas.sismos || a.alertas.inundaciones) pedirPermisoNotif(raiz);
+    if (a.notif.diario.on || a.notif.semanal.on || a.notif.actividad.on || a.alertas.lluviaPronto || a.alertas.clima || a.alertas.sismos || a.alertas.inundaciones) pedirPermisoNotif(raiz);
     if (estado.avisos.ultima) { estado.avisos.ultima = 0; cargarAvisos(true); }
   };
   raiz.querySelectorAll('input[id^="aj-"], select[id^="aj-"]').forEach(el => el.addEventListener("change", cambio));
@@ -391,6 +406,7 @@ function abrirAjustes() {
     <div class="bloque" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px">
       <button class="btn sec chico" data-prueba="diario">Resumen diario</button><button class="btn sec chico" data-prueba="semanal">Resumen semanal</button>
       <button class="btn sec chico" data-prueba="repetido">Resumen cada 4-5 h</button><button class="btn sec chico" data-prueba="paraguas">Aviso de paraguas</button>
+      <button class="btn sec chico" data-prueba="actividad">Aviso de actividad</button><button class="btn sec chico" data-prueba="lluvia">Lluvia inminente</button>
       <button class="btn sec chico" data-prueba="alerta">Alerta del SMN</button><button class="btn sec chico" data-prueba="sismo">Aviso de sismo</button><button class="btn sec chico" data-prueba="inundacion">Aviso de crecida</button><button class="btn sec chico" data-prueba="rio">Revisar río ahora</button></div>
     <div class="nota" id="pruebaNota">Si la prueba no llega, tocá “Diagnóstico” para ver el motivo.</div>
     <button class="btn sec" id="btnDiag">🔍 Diagnóstico de avisos y widget</button>
@@ -529,6 +545,11 @@ function chipParaguas(d) {
   const ll = lluviaProxima(d); if (!ll) return "";
   return `<div class="paraguas">☂️ <div><b>Salí con paraguas</b><small>${ll.ahora ? "Está lloviendo o va a llover en breve" : `Se anuncia lluvia de ${ll.desde} a ${ll.hasta} h`} (hasta ${Math.round(ll.prob)} % de probabilidad)</small></div></div>`;
 }
+function tarjetaQueHacer(d) {
+  const hayCartel = !!lluviaProxima(d); // si ya está el cartel de paraguas arriba, no se repite
+  const l = queHacerHoy(d).filter(x => !(hayCartel && x.k === "paraguas")); if (!l.length) return "";
+  return `<section class="card"><h2>🧭 Qué hacer hoy <span>· ${esc(estado.ubic ? estado.ubic.nombre : "")}</span></h2><ul class="qh">${l.map(x => `<li><span class="e">${x.e}</span><span>${esc(x.t)}</span></li>`).join("")}</ul></section>`;
+}
 function vistaHoy(d) {
   const a = d.current, h = d.hourly, di = d.daily, i0 = indiceHoraActual(h, a);
   const [c1, c2] = gradiente(a.weather_code, a.is_day === 1);
@@ -552,6 +573,7 @@ function vistaHoy(d) {
   </section>
   ${bannerAvisos()}
   ${chipParaguas(d)}
+  ${tarjetaQueHacer(d)}
   ${tarjetaOpinion()}
   <section class="card"><h2>Próximas horas</h2><div class="tira">${horas}</div></section>
   <section class="card"><h2>Próximos 3 días</h2><div class="tira" style="gap:8px">${prox}</div></section>

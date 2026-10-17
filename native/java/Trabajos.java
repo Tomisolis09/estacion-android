@@ -25,6 +25,7 @@ final class Trabajos {
             if (Programador.ACCION_DIARIO.equals(accion)) diario(c, false);
             else if (Programador.ACCION_SEMANAL.equals(accion)) semanal(c, false);
             else if (Programador.ACCION_REPETIDO.equals(accion)) repetido(c, false);
+            else if (Programador.ACCION_ACTIVIDAD.equals(accion)) actividades(c, false);
             else if (Programador.ACCION_ALERTAS.equals(accion)) alertas(c);
         } catch (Throwable t) {
             Log.e(ETQ, "Error en " + accion, t);
@@ -122,6 +123,57 @@ final class Trabajos {
         }
     }
 
+    /** Avisos "antes de tu actividad": se envían los que ya están en hora (la app los calcula al actualizar el clima). */
+    static void actividades(Context c, boolean forzar) {
+        Ajustes a = Prefs.ajustes(c);
+        if (a == null || !a.actividadOn) return;
+        long ahora = System.currentTimeMillis();
+        java.util.List<Recordatorios.Item> deben = Recordatorios.vencidos(
+                Recordatorios.parse(Prefs.recordatorios(c)), ahora, Prefs.enviadosActividad(c));
+        if (deben.isEmpty()) return;
+        // Con pronóstico fresco se verifica que no haya cambiado a lluvia desde que la app armó el texto
+        Pronostico p = null;
+        Prefs.Ubic u = Prefs.ubicacion(c);
+        try {
+            if (u != null) p = Datos.pronostico(c, u, true, 9000, Datos.TTL_MS);
+        } catch (IOException e) {
+            Log.w(ETQ, "Aviso de actividad sin pronóstico nuevo: " + e.getMessage());
+        }
+        for (Recordatorios.Item it : deben) {
+            Prefs.marcarActividadEnviada(c, it.id);
+            String corto = it.corto, largo = it.largo;
+            try {
+                if (p != null && p.hayHoras() && !largo.contains("paraguas")) {
+                    Pronostico.Lluvia l = p.lluviaEntre(p.ahoraLocal(it.inicio), p.ahoraLocal(it.fin));
+                    if (l.hay) {
+                        String extra = "☂️ Ahora se anuncia lluvia"
+                                + (l.hDesde >= 0 ? " (de " + l.hDesde + " a " + (l.hHasta + 1) + " h)" : "") + ": llevá paraguas.";
+                        corto = extra + " " + corto;
+                        largo = extra + "\n" + largo;
+                    }
+                }
+            } catch (RuntimeException e) {
+                Log.w(ETQ, "No se pudo revisar la lluvia del aviso: " + e);
+            }
+            int id = 2000 + (it.id.hashCode() & 0x7fffffff) % 900;
+            Notificador.mostrar(c, id, Notificador.CANAL_RESUMEN, it.titulo, corto, largo);
+        }
+    }
+
+    /** Si la lluvia empieza en la próxima hora y media (y ahora no llueve), avisa una sola vez por episodio. */
+    private static void lluviaPronto(Context c, Prefs.Ubic u, Ajustes a) throws IOException {
+        if (!a.lluviaProntoOn) return;
+        long ahora = System.currentTimeMillis();
+        int h = Calendar.getInstance(TimeZone.getDefault()).get(Calendar.HOUR_OF_DAY);
+        if (h < 7 || h >= 23) return; // de noche no se molesta
+        Pronostico p = Datos.pronostico(c, u, true, 9000, Datos.TTL_MS);
+        Pronostico.Pronto r = p.lluviaPronto(p.ahoraLocal(ahora), 90);
+        if (r == null || r.hora.equals(Prefs.envio(c, "lluviapronto"))) return;
+        Prefs.marcarEnvio(c, "lluviapronto", r.hora);
+        Resumen.Texto t = Resumen.lluviaPronto(u.nombre, r);
+        Notificador.mostrar(c, 1004, Notificador.CANAL_CLIMA, t.titulo, t.corto, t.largo);
+    }
+
     /**
      * Android puede demorar o saltear una alarma (ahorro de batería, modo Doze). Esta revisión corre cada
      * 30 minutos: si el resumen de hoy ya debió salir (hasta 4 horas antes) y no salió, se envía ahora.
@@ -162,6 +214,16 @@ final class Trabajos {
             repetido(c, false);
         } catch (Throwable t) {
             Log.w(ETQ, "Resumen cada pocas horas: " + t);
+        }
+        try {
+            actividades(c, false);
+        } catch (Throwable t) {
+            Log.w(ETQ, "Avisos de actividad: " + t);
+        }
+        try {
+            lluviaPronto(c, u, a);
+        } catch (Throwable t) {
+            Log.w(ETQ, "Lluvia inminente: " + t);
         }
         if (a.alertasClima) {
             try {
@@ -330,6 +392,16 @@ final class Trabajos {
             semanal(c, true);
         } else if ("repetido".equals(tipo)) {
             repetido(c, true);
+        } else if ("lluvia".equals(tipo)) {
+            Notificador.mostrar(c, 3996, Notificador.CANAL_CLIMA,
+                    "☔ " + (u != null ? u.nombre : "Tu ubicación") + " · Se viene la lluvia",
+                    "(Prueba) Se anuncia lluvia para las " + hora(System.currentTimeMillis() + 3600000L, "HH") + ":00 (en unos 40 min). Salí con paraguas.",
+                    "(Prueba) Se anuncia lluvia para las " + hora(System.currentTimeMillis() + 3600000L, "HH") + ":00 (en unos 40 min). Salí con paraguas.\nProbabilidad: 70 %.\nEs una estimación por hora: la lluvia puede adelantarse o demorarse un poco.");
+        } else if ("actividad".equals(tipo)) {
+            Notificador.mostrar(c, 3995, Notificador.CANAL_RESUMEN,
+                    "🏍️ Moto a las " + hora(System.currentTimeMillis() + 3600000L, "HH:mm") + " · Con precauciones",
+                    "(Prueba) ☂️ Se anuncia lluvia: llevá paraguas. Casco bien abrochado.",
+                    "(Prueba) Así es el aviso que te llega antes de tus actividades con horario propio.\n☂️ Se anuncia lluvia: llevá paraguas.\nCasco bien abrochado y ropa con protecciones.\nCon lluvia, el piso mojado resbala: aumentá la distancia de frenado.");
         } else if ("paraguas".equals(tipo)) {
             Notificador.mostrar(c, 3997, Notificador.CANAL_RESUMEN,
                     "📍 " + (u != null ? u.nombre : "Tu ubicación") + " · Clima de las " + hora(System.currentTimeMillis(), "HH:mm"),

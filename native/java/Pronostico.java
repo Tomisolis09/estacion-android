@@ -83,6 +83,69 @@ final class Pronostico {
         double mm;
     }
 
+    /** Lluvia anunciada entre dos horas locales (aaaa-mm-ddTHH:mm). Si "hasta" cae justo en punto, esa hora no cuenta. */
+    Lluvia lluviaEntre(String desdeLocal, String hastaLocal) {
+        Lluvia r = new Lluvia();
+        if (desdeLocal == null || hastaLocal == null || desdeLocal.length() < 16 || hastaLocal.length() < 16) return r;
+        String d13 = desdeLocal.substring(0, 13), h13 = hastaLocal.substring(0, 13);
+        boolean finEnPunto = hastaLocal.endsWith(":00");
+        for (int i = 0; i < hTiempo.length; i++) {
+            String t = hTiempo[i];
+            if (t.length() < 13) continue;
+            String t13 = t.substring(0, 13);
+            int cmpH = t13.compareTo(h13);
+            if (t13.compareTo(d13) < 0 || cmpH > 0 || (cmpH == 0 && finEnPunto)) continue;
+            r.usaHoras = true;
+            if (hProb[i] >= PROB_LLUVIA || hMm[i] >= MM_LLUVIA_HORA) {
+                int h = Integer.parseInt(t.substring(11, 13));
+                if (r.hDesde < 0) r.hDesde = h;
+                r.hHasta = h;
+                r.hay = true;
+                r.probMax = Math.max(r.probMax, hProb[i]);
+                r.mm += hMm[i];
+            }
+        }
+        return r;
+    }
+
+    /** Lluvia que empieza pronto. */
+    static final class Pronto {
+        /** Minutos que faltan para que empiece. */
+        int minutos;
+        /** "aaaa-mm-ddTHH:00" de la hora en que empieza. */
+        String hora;
+        double prob;
+        double mm;
+    }
+
+    private boolean horaLluviosa(int i) {
+        return hProb[i] >= PROB_LLUVIA || hMm[i] >= MM_LLUVIA_HORA;
+    }
+
+    /**
+     * Si ahora no se anuncia lluvia pero empieza dentro de "ventanaMin" minutos (según los datos por hora), la devuelve.
+     * Los datos son por hora: el aviso es aproximado y no un radar de lluvia inmediata.
+     */
+    Pronto lluviaPronto(String ahoraLocal, int ventanaMin) {
+        if (ahoraLocal == null || ahoraLocal.length() < 16 || !hayHoras()) return null;
+        int i = indiceHora(ahoraLocal.substring(0, 13) + ":00");
+        if (i < 0 || horaLluviosa(i)) return null;
+        int min = Integer.parseInt(ahoraLocal.substring(14, 16));
+        for (int k = 1; k <= 2; k++) {
+            int faltan = (60 - min) + 60 * (k - 1);
+            if (faltan > ventanaMin || i + k >= hTiempo.length) break;
+            if (horaLluviosa(i + k)) {
+                Pronto r = new Pronto();
+                r.minutos = faltan;
+                r.hora = hTiempo[i + k];
+                r.prob = hProb[i + k];
+                r.mm = hMm[i + k];
+                return r;
+            }
+        }
+        return null;
+    }
+
     /** Lluvia anunciada desde "ahoraLocal" (aaaa-mm-ddTHH:mm) hasta el final de ese mismo día. */
     Lluvia lluviaRestoDelDia(String ahoraLocal) {
         Lluvia r = new Lluvia();

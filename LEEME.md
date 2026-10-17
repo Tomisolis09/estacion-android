@@ -1,4 +1,4 @@
-# Estación Meteorológica v4.7 – Android
+# Estación Meteorológica v4.9 – Android
 
 Novedades: widget (temperatura, ubicación y próximos 3 días), notificaciones diarias y semanales configurables,
 ubicación por GPS, solapa Actividades, alertas oficiales del SMN, sismos y posible tsunami (solo cerca de la costa),
@@ -145,3 +145,13 @@ Nunca toques los anuncios reales desde tu propio celular: podés suspender tu cu
 ## Novedades de la v4.7
 
 - **Guía de uso dentro de la app** (`www/guia.js`): 11 temas (ubicación y GPS, Hoy, Horas y Días, Radar, Actividades, Planetas, Avisos, Notificaciones, Widget, Ajustes y opinión). Se muestra una vez al terminar la bienvenida (y una sola vez a quienes ya tenían la app) y queda siempre en Ajustes → "📖 Cómo usar la app (guía)". Para cambiar los textos, editá la lista `GUIA` en `guia.js`.
+
+## Novedades de la v4.8
+
+- **Aviso antes de tus actividades**: si cargaste días y horarios en Actividades, te llega una notificación 1 o 2 horas antes (Ajustes → "Avisarme antes de mis actividades") con el clima y las precauciones de ese horario. La app arma el texto cada vez que actualiza el clima y, al enviarlo, la parte nativa revisa el pronóstico nuevo y agrega el aviso de paraguas si empezó a anunciarse lluvia. Cubre hasta 2 días hacia adelante.
+- **Lluvia inminente**: si ahora no llueve pero la lluvia empieza en la próxima hora y media, te avisa una sola vez por episodio (Ajustes → Alertas → "Lluvia inminente"; viene activado; no avisa de 23 a 7 h). Usa datos por hora, así que es aproximado: la lluvia puede adelantarse o demorarse. Se revisa junto con el control de 30 minutos que ya hacía la app.
+- Nuevos botones de prueba en Ajustes: "Aviso de actividad" y "Lluvia inminente".
+
+## Novedades de la v4.9
+
+- **Tarjeta "🧭 Qué hacer hoy"** en la pantalla Hoy: consejos simples según las próximas horas — qué ropa llevar, si el paraguas, si conviene tender la ropa, protector solar, mejor momento para salir y si es buen día para lavar el auto. Las reglas están en `queHacerHoy` (`www/nucleo.js`); se pueden ajustar los umbrales ahí.

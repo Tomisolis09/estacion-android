@@ -18,6 +18,12 @@ final class Ajustes {
     int semanalDia = Calendar.SUNDAY;
     int semanalH = 20;
     int semanalM = 0;
+    /** Aviso 1 o 2 horas antes de cada actividad con horario propio. */
+    boolean actividadOn = true;
+    /** Anticipación del aviso, en minutos (60 o 120). */
+    int actividadAntesMin = 60;
+    /** Aviso cuando la lluvia empieza en la próxima hora y media. */
+    boolean lluviaProntoOn = true;
     boolean alertasClima = true;
     boolean alertasSismos = true;
     boolean alertasInundaciones = true;
@@ -49,6 +55,11 @@ final class Ajustes {
             int[] s = Tiempo.hora(Json.str(semanal.get("hora"), null), a.semanalH, a.semanalM);
             a.semanalH = s[0];
             a.semanalM = s[1];
+            Map<String, Object> act = Json.obj(notif.get("actividad"));
+            a.actividadOn = Json.bool(act.get("on"), a.actividadOn);
+            int antes = (int) Json.num(act.get("antes"), 60);
+            a.actividadAntesMin = antes == 120 ? 120 : 60;
+            a.lluviaProntoOn = Json.bool(alertas.get("lluviaPronto"), a.lluviaProntoOn);
             a.alertasClima = Json.bool(alertas.get("clima"), a.alertasClima);
             a.alertasSismos = Json.bool(alertas.get("sismos"), a.alertasSismos);
             a.alertasInundaciones = Json.bool(alertas.get("inundaciones"), a.alertasInundaciones);

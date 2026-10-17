@@ -16,6 +16,7 @@ final class Programador {
     static final String ACCION_SEMANAL = "__PKG__.RESUMEN_SEMANAL";
     static final String ACCION_ALERTAS = "__PKG__.REVISAR_ALERTAS";
     static final String ACCION_REPETIDO = "__PKG__.RESUMEN_REPETIDO";
+    static final String ACCION_ACTIVIDAD = "__PKG__.AVISO_ACTIVIDAD";
 
     static final long INTERVALO_ALERTAS_MS = 30L * 60 * 1000;
 
@@ -53,6 +54,7 @@ final class Programador {
             quitar(c, am, 2, ACCION_SEMANAL);
             quitar(c, am, 3, ACCION_ALERTAS);
             quitar(c, am, 4, ACCION_REPETIDO);
+            quitar(c, am, 5, ACCION_ACTIVIDAD);
             return;
         }
         long ahora = System.currentTimeMillis();
@@ -66,6 +68,11 @@ final class Programador {
                 ? Tiempo.proximaRepeticion(ahora, a.diarioH, a.diarioM, a.diarioCada, a.diarioHastaH, a.diarioHastaM, zona) : -1;
         if (prox > 0) poner(c, am, 4, ACCION_REPETIDO, prox);
         else quitar(c, am, 4, ACCION_REPETIDO);
+        // Aviso antes de la próxima actividad con horario propio
+        long proxAct = a.actividadOn
+                ? Recordatorios.proximo(Recordatorios.parse(Prefs.recordatorios(c)), ahora, Prefs.enviadosActividad(c)) : -1;
+        if (proxAct > 0) poner(c, am, 5, ACCION_ACTIVIDAD, proxAct);
+        else quitar(c, am, 5, ACCION_ACTIVIDAD);
         // Cada 30 minutos: revisa alertas (si están activadas) y mantiene al día el widget
         poner(c, am, 3, ACCION_ALERTAS, ahora + INTERVALO_ALERTAS_MS);
     }
