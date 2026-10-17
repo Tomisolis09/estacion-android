@@ -13,7 +13,7 @@ const OPEN_METEO_CLAVE = "";
 const POLITICA_URL = "";
 const CONTACTO_EMAIL = "tomisolisrider09@gmail.com"; // correo al que llegan los comentarios y reportes de errores
 const PLAY_ID = "com.tomisolis.estacionmeteorologica"; // mismo appId que capacitor.config.json
-const APP_VERSION = "4.9"; // número que se ve al pie de cada pantalla (sirve para saber qué APK tenés instalado)
+const APP_VERSION = "4.11"; // número que se ve al pie de cada pantalla (sirve para saber qué APK tenés instalado)
 const omServidor = sub => `https://${OPEN_METEO_CLAVE ? "customer-" : ""}${sub}.open-meteo.com`;
 const omClave = OPEN_METEO_CLAVE ? `&apikey=${encodeURIComponent(OPEN_METEO_CLAVE)}` : "";
 const URL_CLIMA = omServidor("api") + "/v1/forecast";
@@ -1100,6 +1100,79 @@ function queHacerHoy(d) {
   return out.slice(0, 6);
 }
 
+// ---------- Viajes: clima de un destino para unas fechas ----------
+const VIAJE_MAX_DIAS = 30, VIAJE_HORIZONTE = 16; // el pronóstico llega a 16 días; más allá se estima con años anteriores
+const fechaUTC = iso => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10));
+const isoDeUTC = ms => new Date(ms).toISOString().slice(0, 10);
+const sumarDias = (iso, n) => isoDeUTC(fechaUTC(iso) + n * 86400000);
+// Todas las fechas aaaa-mm-dd entre dos fechas, inclusive. [] si el rango no es válido.
+function diasEntre(desde, hasta) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(desde || "") || !/^\d{4}-\d{2}-\d{2}$/.test(hasta || "")) return [];
+  const n = Math.round((fechaUTC(hasta) - fechaUTC(desde)) / 86400000);
+  if (!(n >= 0) || n > 400) return [];
+  return Array.from({ length: n + 1 }, (_, i) => sumarDias(desde, i));
+}
+// La misma fecha "k" años antes (el 29/02 pasa a 28/02 si ese año no es bisiesto)
+function fechaAniosAntes(iso, k) {
+  const y = +iso.slice(0, 4) - k, m = iso.slice(5, 7), d = iso.slice(8, 10);
+  const f = new Date(Date.UTC(y, +m - 1, +d));
+  return f.getUTCMonth() === +m - 1 ? isoDeUTC(f.getTime()) : `${y}-${m}-28`;
+}
+// Promedia varios años del archivo histórico. archivos[j] = respuesta "daily" del año j+1 para las mismas fechas (en orden).
+// Devuelve { fecha: { max, min, prob (% de años con lluvia), mm, codigo, anios } }
+function tipicosDeArchivos(fechas, archivos) {
+  const out = {};
+  fechas.forEach((f, i) => {
+    const v = (archivos || []).map(a => a && a.time && a.time.length === fechas.length ? {
+      max: a.temperature_2m_max[i], min: a.temperature_2m_min[i], mm: a.precipitation_sum[i], cod: a.weather_code ? a.weather_code[i] : null } : null)
+      .filter(x => x && typeof x.max === "number" && typeof x.min === "number");
+    if (!v.length) return;
+    const media = k => v.reduce((t, x) => t + x[k], 0) / v.length;
+    const lluvias = v.filter(x => (x.mm || 0) >= 1).length;
+    const cuenta = {}; v.forEach(x => { if (x.cod != null) cuenta[x.cod] = (cuenta[x.cod] || 0) + 1; });
+    let codigo = +Object.keys(cuenta).sort((p, q) => cuenta[q] - cuenta[p])[0];
+    if (!isFinite(codigo)) codigo = lluvias * 2 > v.length ? 61 : 2;
+    out[f] = { max: media("max"), min: media("min"), prob: Math.round(100 * lluvias / v.length), mm: media("mm") || 0, codigo, anios: v.length };
+  });
+  return out;
+}
+// Une pronóstico (diario de la API) y estimaciones históricas en una lista por día.
+function armarDiasViaje(fechas, pron, tipicos) {
+  const ix = {}; ((pron && pron.time) || []).forEach((t, i) => { ix[t] = i; });
+  return fechas.map(f => {
+    const i = ix[f], g = k => (pron && pron[k] ? pron[k][i] : null);
+    if (i != null && typeof g("temperature_2m_max") === "number") {
+      return { f, fuente: "pron", max: g("temperature_2m_max"), min: g("temperature_2m_min"), prob: g("precipitation_probability_max") ?? 0,
+        mm: g("precipitation_sum") ?? 0, viento: g("wind_speed_10m_max") ?? 0, uv: g("uv_index_max") ?? 0, codigo: g("weather_code") ?? 2 };
+    }
+    const t = tipicos && tipicos[f];
+    return t ? { f, fuente: "tipico", max: t.max, min: t.min, prob: t.prob, mm: t.mm, viento: 0, uv: 0, codigo: t.codigo } : { f, fuente: null };
+  });
+}
+const diaConLluvia = d => d.fuente && (d.fuente === "tipico" ? d.prob >= 50 : (d.prob >= 50 || d.mm >= 2));
+function resumenViaje(dias) {
+  const v = dias.filter(d => d.fuente);
+  if (!v.length) return null;
+  return { max: Math.max(...v.map(d => d.max)), min: Math.min(...v.map(d => d.min)), lluviosos: v.filter(diaConLluvia).length, total: v.length,
+    viento: Math.max(...v.map(d => d.viento || 0)), uv: Math.max(...v.map(d => d.uv || 0)), pron: v.filter(d => d.fuente === "pron").length, tipicos: v.filter(d => d.fuente === "tipico").length };
+}
+// Qué llevar en la valija
+function consejosViaje(dias) {
+  const r = resumenViaje(dias); if (!r) return [];
+  const out = [], R = Math.round;
+  if (r.min <= 10) out.push(`🧥 Abrigo de verdad: las mínimas llegan a ${R(r.min)}°.`);
+  else if (r.min <= 16) out.push(`🧥 Una campera o buzo para la noche (mínima ${R(r.min)}°).`);
+  if (r.max >= 30) out.push(`👕 Ropa liviana y fresca: llegan a ${R(r.max)}° de máxima.`);
+  if (r.max - r.min >= 14) out.push("🧅 Ropa en capas: hay mucha diferencia entre el día y la noche.");
+  if (r.lluviosos > 0) out.push(`☂️ Paraguas o piloto: probable lluvia ${r.lluviosos} de ${r.total} día${r.total > 1 ? "s" : ""}.`);
+  if (r.max >= 26 || r.uv >= 6) out.push("🧴 Protector solar, gorro y lentes de sol.");
+  if (r.viento >= 40) out.push("💨 Algún día con viento fuerte: una campera que corte el viento.");
+  if (!out.length) out.push("👕 Ropa cómoda de entretiempo; con una campera liviana alcanza.");
+  return out;
+}
+// Días que faltan para el viaje (0 = empieza hoy; negativo = ya empezó)
+const diasHastaViaje = (desde, hoy) => Math.round((fechaUTC(desde) - fechaUTC(hoy)) / 86400000);
+
 // ---------- Avisos antes de las actividades con horario propio ----------
 // Arma los avisos de los próximos 2 días que la parte nativa envía "antesMin" minutos antes de cada actividad.
 // acts: actividades del usuario; horarios: { id: {dias, desde, hasta} }; solDe(dia) opcional (luz natural).
@@ -1161,6 +1234,7 @@ function lluviaProxima(d) {
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
+    VIAJE_MAX_DIAS, VIAJE_HORIZONTE, diasEntre, sumarDias, fechaAniosAntes, tipicosDeArchivos, armarDiasViaje, resumenViaje, consejosViaje, diasHastaViaje, diaConLluvia,
     queHacerHoy, recordatoriosActividad,
     horasRepeticion, lluviaProxima,
     PARAMS, dato, describir, icono, gradiente, nivelUV, indiceHoraActual, analizarRadarSatelite,

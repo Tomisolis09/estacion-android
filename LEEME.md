@@ -1,4 +1,4 @@
-# Estación Meteorológica v4.9 – Android
+# Estación Meteorológica v4.11 – Android
 
 Novedades: widget (temperatura, ubicación y próximos 3 días), notificaciones diarias y semanales configurables,
 ubicación por GPS, solapa Actividades, alertas oficiales del SMN, sismos y posible tsunami (solo cerca de la costa),
@@ -155,3 +155,12 @@ Nunca toques los anuncios reales desde tu propio celular: podés suspender tu cu
 ## Novedades de la v4.9
 
 - **Tarjeta "🧭 Qué hacer hoy"** en la pantalla Hoy: consejos simples según las próximas horas — qué ropa llevar, si el paraguas, si conviene tender la ropa, protector solar, mejor momento para salir y si es buen día para lavar el auto. Las reglas están en `queHacerHoy` (`www/nucleo.js`); se pueden ajustar los umbrales ahí.
+
+## Novedades de la v4.10
+
+- Corrección en Actividades: al tocar una fila de "Tus horarios" (o al guardar un horario) el detalle se abría más abajo en la pantalla y parecía que no pasaba nada. Ahora la pantalla baja sola hasta la tarjeta abierta.
+- Si el horario de hoy ya terminó, el detalle ahora muestra la próxima vez que cae tu horario, con el clima hora por hora y las precauciones.
+
+## Novedades de la v4.11
+
+- **✈️ Viajes** (`www/viajes.js`): cargás un destino (de cualquier país) y las fechas (hasta 30 días) desde la tarjeta "Viajes" en Hoy o desde Ajustes → "Mis viajes". La app muestra el clima día por día, un resumen del viaje y "qué llevar". Hasta 16 días antes del viaje usa el pronóstico de Open-Meteo; para fechas más lejanas muestra cómo suele ser el clima en esos días según los 3 años anteriores (API histórica de Open-Meteo, marcado como "típico"). Los viajes se guardan solo en el dispositivo y desaparecen 2 días después de terminar. El uso del plan gratuito de Open-Meteo sigue siendo no comercial.

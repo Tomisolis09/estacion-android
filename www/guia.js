@@ -45,6 +45,12 @@ const GUIA = [
     "Tocá un día de la tira de abajo para ver otras noches. También te sugiere la próxima noche con cielo más despejado.",
     "Para ver mejor: alejate de luces fuertes, esperá unos minutos a que se acostumbre la vista y mirá hacia el horizonte indicado.",
   ] },
+  { e: "✈️", t: "Viajes", tab: "hoy", p: [
+    "¿Te vas de vacaciones? En Hoy (más abajo) o en Ajustes → “Mis viajes” tocá “Agregar viaje”.",
+    "Elegí el destino (puede ser de otro país) y las fechas de ida y vuelta, hasta 30 días.",
+    "La app te muestra el clima día por día, el resumen del viaje y qué llevar en la valija (abrigo, paraguas, protector solar…).",
+    "Si faltan 16 días o menos ves el pronóstico. Si falta más, ves cómo suele ser el clima en esas fechas según los 3 años anteriores: es una guía, no un pronóstico, y se reemplaza solo por el pronóstico cuando se acerque el viaje.",
+  ] },
   { e: "⚠️", t: "Avisos", tab: "avisos", p: [
     "Alertas oficiales del SMN para tu zona (tormentas, viento, calor, frío, niebla…) con nivel de color, horario y qué hacer.",
     "Ríos e inundaciones: estima si el río cercano puede crecer en los próximos días. Es una estimación, no un aviso oficial de evacuación.",

@@ -7,6 +7,7 @@ Estación Meteorológica muestra el pronóstico del tiempo, alertas meteorológi
 **Datos que usa la app**
 - **Ubicación:** si activás el GPS, la app obtiene la ubicación precisa o aproximada de tu dispositivo **solo mientras la app está abierta**. Si preferís, podés elegir una localidad a mano. La última ubicación se guarda en tu dispositivo y la app la usa también **con la app cerrada** (sin volver a consultar el GPS) para actualizar el widget y enviarte las notificaciones, alertas, avisos de sismos y de crecida de ríos que activaste. Para eso, esas coordenadas guardadas se envían periódicamente (aproximadamente cada 30 minutos) a Open-Meteo y USGS, aunque no estés usando la app. Si no querés eso, desactivá las notificaciones y quitá el widget, o elegí una localidad a mano. No tenemos servidores propios y no guardamos tu ubicación en ningún servidor nuestro.
 - **Ajustes y último pronóstico:** tu localidad, los horarios de las notificaciones y las alertas que elegiste, y el último pronóstico se guardan únicamente en tu dispositivo.
+- **Viajes:** los destinos y fechas que cargues en la función Viajes se guardan únicamente en tu dispositivo. Para mostrarte el clima, las coordenadas del destino se envían a Open-Meteo (pronóstico y datos históricos).
 - **Notificaciones:** la app te las envía desde tu propio dispositivo; no usamos servicios de mensajería externos.
 
 **Servicios de terceros que reciben datos**

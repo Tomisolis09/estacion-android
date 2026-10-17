@@ -393,6 +393,7 @@ function mostrarHoja2(html) { $("#hoja2in").innerHTML = html; $("#hoja2").hidden
 function abrirAjustes() {
   const tema = leer("tema") || "auto";
   mostrarHoja2(`<h3>Ajustes</h3>
+    <button class="btn sec" id="btnViajes">✈️ Mis viajes (clima de un destino)</button>
     <button class="btn sec" id="btnGuia">📖 Cómo usar la app (guía)</button>
     <div class="sec-tit">Ubicación</div>
     <div class="bloque"><div class="fila-aj"><div class="tx"><b>Seguir mi ubicación (GPS)</b><small>La ubicación se actualiza sola cuando te movés</small></div>${interruptor("aj-gps", estado.ajustes.gps)}</div></div>
@@ -432,6 +433,7 @@ function abrirAjustes() {
   });
   h.querySelector("#btnMisAct").onclick = () => abrirActividades(abrirAjustes);
   h.querySelector("#btnGuia").onclick = () => abrirGuia("indice");
+  h.querySelector("#btnViajes").onclick = () => abrirViajes();
   h.querySelector("#btnWidget").onclick = async () => {
     const nota = h.querySelector("#widgetNota");
     if (!NATIVO) { nota.textContent = "El widget está disponible en la app instalada en el teléfono."; return; }
@@ -574,6 +576,7 @@ function vistaHoy(d) {
   ${bannerAvisos()}
   ${chipParaguas(d)}
   ${tarjetaQueHacer(d)}
+  ${tarjetaViajes()}
   ${tarjetaOpinion()}
   <section class="card"><h2>Próximas horas</h2><div class="tira">${horas}</div></section>
   <section class="card"><h2>Próximos 3 días</h2><div class="tira" style="gap:8px">${prox}</div></section>
@@ -852,6 +855,21 @@ function horarioDelDia(d, a, dia) {
   if (!hr || !f || !hr.dias.includes(diaSemanaDe(f))) return null;
   return evaluarHorario(d, a, dia, hr, solDe(d, dia));
 }
+// Después de abrir una tarjeta (por ejemplo desde la agenda de arriba) se baja hasta ella para que se vea el detalle
+function verTarjeta(id) {
+  setTimeout(() => {
+    const b = [...document.querySelectorAll("[data-act]")].find(x => x.dataset.act === id);
+    if (b) b.closest(".act").scrollIntoView({ block: "start", behavior: "smooth" });
+  }, 60);
+}
+// Próxima vez (después del día "desde") en que cae el horario propio de una actividad, ya evaluada
+function proximoHorario(d, a, desde) {
+  for (let i = desde + 1; i < (d.daily.time || []).length; i++) {
+    const r = horarioDelDia(d, a, i);
+    if (r && !r.pasado && !r.sinDatos) return { i, f: d.daily.time[i], r };
+  }
+  return null;
+}
 const filaHoras = horas => `<div class="hh-fila" role="list" aria-label="Clima hora por hora">${horas.map(z =>
   `<div class="hh" role="listitem"><small>${String(z.H % 24).padStart(2, "0")} h</small><span class="e">${icono(z.codigo, z.esDia)}</span><b>${Math.round(z.temp)}°</b><small>🌧 ${Math.round(z.prob)}%</small></div>`).join("")}</div>`;
 const statsTxt = st => `🌡️ ${Math.round(st.tempMin)}° a ${Math.round(st.tempMax)}° · 💨 viento ${Math.round(st.viento)} km/h · 🌧 ${Math.round(st.prob)}%`;
@@ -874,7 +892,7 @@ function abrirHorario(id) {
     <button class="btn sec" id="hr-cancelar">Cancelar</button>`);
   const h = $("#hoja2in"), nota = h.querySelector("#hr-nota");
   h.querySelectorAll("[data-hdia]").forEach(b => b.onclick = () => b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")));
-  const cerrar = () => { estado.actAbierta = id; cerrarHoja2(); render(); };
+  const cerrar = () => { estado.actAbierta = id; cerrarHoja2(); render(); verTarjeta(id); };
   h.querySelector("#hr-cancelar").onclick = cerrarHoja2;
   const q = h.querySelector("#hr-quitar");
   if (q) q.onclick = () => { delete estado.ajustes.horarios[id]; guardarAjustes(); cerrar(); };
@@ -933,6 +951,13 @@ function vistaActividades(d) {
           `<div class="sutil">${statsTxt(usa.stats)}</div>`, filaHoras(usa.horas),
           `<b>Precauciones para tu horario</b><ul>${usa.precauciones.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`);
         if (!r.sinHorario) p.push(`<div class="sutil">🕒 Mejor momento del día: ${r.ventana} (${r.veredicto.texto})</div>`);
+      } else if (mio && mio.pasado) {
+        const prox = proximoHorario(d, mias.lista.find(x => x.id === r.id), estado.actDia);
+        p.push(`<div>⏱️ Tu horario de ${estado.actDia === 0 ? "hoy" : "este día"} (<span class="ventana">${mio.ventana}</span>) ya terminó.</div>`);
+        if (prox) p.push(`<div>🗓️ Próxima vez: <b>${esc(nombreDia(prox.f, prox.i))}</b> <span class="ventana">${prox.r.ventana}</span> · ${prox.r.veredicto.texto}</div>`,
+          `<div class="sutil">${statsTxt(prox.r.stats)}</div>`, filaHoras(prox.r.horas),
+          `<b>Precauciones para ese horario</b><ul>${prox.r.precauciones.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`);
+        else p.push(`<div class="sutil">No hay más días con tu horario dentro del pronóstico disponible.</div>`);
       } else if (!r.sinHorario) {
         p.push(`<div>🕒 Mejor momento: <span class="ventana">${r.ventana}</span></div>`, `<div class="sutil">${statsTxt(r.stats)}</div>`,
           `<b>Precauciones</b><ul>${r.precauciones.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`);
@@ -1065,7 +1090,7 @@ $("#vista").addEventListener("click", e => {
   const m = e.target.closest("[data-metrica]"); if (m) { estado.metrica = m.dataset.metrica; render(); return; }
   const ir = e.target.closest("[data-tab-ir]"); if (ir) { estado.tab = ir.dataset.tabIr; guardar("tab", estado.tab); render(); $("#vista").scrollTop = 0; cargarAvisos(); return; }
   const hh = e.target.closest("[data-horario]"); if (hh) { abrirHorario(hh.dataset.horario); return; }
-  const ag = e.target.closest("[data-agenda]"); if (ag) { const [i, id] = ag.dataset.agenda.split("|"); estado.actDia = +i; estado.actAbierta = id; render(); return; }
+  const ag = e.target.closest("[data-agenda]"); if (ag) { const [i, id] = ag.dataset.agenda.split("|"); estado.actDia = +i; estado.actAbierta = id; render(); verTarjeta(id); return; }
   const op = e.target.closest("[data-op]"); if (op) { accionOpinion(op.dataset.op); return; }
   const ur = e.target.closest("[data-url]"); if (ur) { abrirEnlace(ur.dataset.url); return; }
   const aa = e.target.closest("[data-av]"); if (aa) { estado.avAbierto = estado.avAbierto === aa.dataset.av ? null : aa.dataset.av; render(); return; }
